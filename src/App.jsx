@@ -575,22 +575,29 @@ export default function App() {
         {showInstall && (
           <div className="card">
             <h2>Get the app on your phone</h2>
-            <p className="sub" style={{ marginBottom: 10 }}>Three taps — then it opens full screen and works with no internet.</p>
+            <p className="sub" style={{ marginBottom: 10 }}>
+              {isIOS
+                ? "Open this page in Safari — on iPhone only Safari can install it as a real app. Then:"
+                : "Open this page in Chrome, then:"}
+            </p>
             <div className="instSteps">
               {isIOS ? (
                 <>
                   <div className="instStep"><ShareIcon /><div className="hintTxt"><b>1.</b> In <b>Safari</b>, tap the <b>Share</b> button — the square with the up arrow, bottom of the screen</div></div>
                   <div className="instStep"><AddIcon /><div className="hintTxt"><b>2.</b> Scroll down the list and tap <b>Add to Home Screen</b></div></div>
-                  <div className="instStep"><AppIcon /><div className="hintTxt"><b>3.</b> Tap <b>Add</b>, then open <b>Tongue &amp; Groove</b> from your home screen — not from Safari</div></div>
+                  <div className="instStep"><AppIcon /><div className="hintTxt"><b>3.</b> Tap <b>Add</b>, then open <b>Tongue &amp; Groove</b> from your home screen — it opens full screen and works with no internet</div></div>
                 </>
               ) : (
                 <>
                   <div className="instStep"><MenuIcon /><div className="hintTxt"><b>1.</b> In <b>Chrome</b>, tap the <b>⋮ menu</b> in the top corner</div></div>
                   <div className="instStep"><AddIcon /><div className="hintTxt"><b>2.</b> Tap <b>Add to Home screen</b> (or <b>Install app</b>)</div></div>
-                  <div className="instStep"><AppIcon /><div className="hintTxt"><b>3.</b> Open <b>Tongue &amp; Groove</b> from your home screen</div></div>
+                  <div className="instStep"><AppIcon /><div className="hintTxt"><b>3.</b> Open <b>Tongue &amp; Groove</b> from your home screen — full screen, works offline</div></div>
                 </>
               )}
             </div>
+            {isIOS && (
+              <p className="sub" style={{ margin: "12px 0 0" }}>Opens like a webpage instead of an app? The icon was made outside Safari (Chrome, or a link inside Messages/Mail). Delete the icon and redo the steps above in Safari.</p>
+            )}
             <button className="cta" style={{ width: "100%", margin: "16px 0 0" }} onClick={() => setIosHintDismissed(true)}>Got it — hide these steps</button>
           </div>
         )}
