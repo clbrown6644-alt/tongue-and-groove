@@ -200,7 +200,7 @@ export default function App() {
     else markRecent(nx.w);
     itemRef.current = nx;
     setItem(nx);
-    const label = mode === "words" ? nx.w : mode === "pairs" ? nx.pair[0] + " / " + nx.pair[1] : nx.words[nx.idx];
+    const label = mode === "pairs" ? nx.pair[0] + " / " + nx.pair[1] : mode === "sents" ? nx.words[nx.idx] : nx.w;
     doneRef.current += 1;
     setSetItems((p) => [...p, label]);
     bump(mode === "pairs" ? 2 : 1, mode === "pairs"); // a pair counts for 2 words
@@ -237,8 +237,8 @@ export default function App() {
       setPlaying(false);
       const prevTotal = totalDone - setItems.length;
       const ms = MILESTONES.find((m) => prevTotal < m && totalDone >= m);
-      setAward(ms ? { milestone: ms } : { set: true });
-      if (!ms) setTimeout(() => setAward(null), 3000); // little award fades away
+      const newSets = (hist[todayKey]?.s ?? 0) + 1;
+      setAward(ms ? { milestone: ms } : newSets % 10 === 0 ? { setsMilestone: newSets } : { set: true, n: newSets });
       setHist((h) => {
         const k = dkey(new Date());
         const d = h[k] || { w: 0, p: 0, s: 0 };
@@ -455,10 +455,15 @@ export default function App() {
         <Header right={<button className="hdrBtn" onClick={() => { applyHardMarks(); setScreen("progress"); }}>Progress</button>} />
         <div className="card" style={{ textAlign: "center", paddingTop: 26 }}>
           {award && (
-            <div className={"awardWrap" + (award.set ? " awardFade" : "")}>
-              <Badge size={award.milestone ? 104 : 72} color={award.milestone ? T.amber : T.blue}
+            <div className="awardWrap">
+              <Badge size={award.set ? 72 : 104} color={award.milestone ? T.amber : T.blue}
                 ring={award.milestone ? T.blue : T.amber} star={award.milestone ? T.ink : "#fff"} />
-              <div className="awardLbl">{award.milestone ? award.milestone.toLocaleString() + " words!" : "Set complete"}</div>
+              <div className="awardLbl">
+                {award.milestone ? award.milestone.toLocaleString() + " words!"
+                  : award.setsMilestone ? award.setsMilestone + " sets today! 🎉"
+                  : award.n === 1 ? "1 down — nice start!"
+                  : award.n + " down today!"}
+              </div>
             </div>
           )}
           <div className="bigNum" style={{ marginTop: award ? 12 : 0 }}>{setItems.length}</div>
@@ -699,7 +704,11 @@ export default function App() {
         <button className={"tab" + (mode === "words" ? " on" : "")} onClick={() => switchMode("words")}>Words</button>
         <button className={"tab" + (mode === "pairs" ? " on" : "")} onClick={() => switchMode("pairs")}>Sound pairs</button>
         <button className={"tab" + (mode === "sents" ? " on" : "")} onClick={() => switchMode("sents")}>Sentences</button>
-        <button className={"tab" + (mode === "scen" ? " on" : "")} onClick={() => switchMode("scen")}>Scenarios</button>
+        <button className={"tab" + (mode === "scen" ? " on" : "")}
+          onClick={() => {
+            if (mode === "scen") { setPlaying(false); setScenario(null); setItem(null); itemRef.current = null; } // tap again → back to the chooser
+            else switchMode("scen");
+          }}>Scenarios</button>
       </div>
       {mode === "scen" && scenario && (
         <div style={{ textAlign: "center", margin: "6px 16px 0" }}>
