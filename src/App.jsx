@@ -17,6 +17,7 @@ const REVIEW_P = 0.1;    // share of picks that revisit graduated words so they 
 const ACTIVE_START = 40; // words per category in the starting deck (most common first)
 const ACTIVE_MIN = 25;   // when fewer un-graduated words remain, unlock more
 const ACTIVE_STEP = 15;  // how many next-most-common words unlock per refill
+const RECENT_GAP = 25;   // an item can't repeat until this many others have shown
 
 function pickCat(ratings, keys) {
   const pool = [];
@@ -86,6 +87,18 @@ export default function App() {
   const doneRef = useRef(0);
   const wakeRef = useRef(null);
   const marksAppliedRef = useRef(true); // false only while a fresh summary awaits its hard-word taps
+  const recentRef = useRef([]); // last RECENT_GAP item keys, to space out repeats
+
+  // drop items shown within the last RECENT_GAP picks; relax if that empties the pool
+  const notRecent = (arr, key = (x) => x) => {
+    const r = new Set(recentRef.current);
+    const f = arr.filter((x) => !r.has(key(x)));
+    return f.length ? f : arr;
+  };
+  const markRecent = (key) => {
+    recentRef.current.push(key);
+    if (recentRef.current.length > RECENT_GAP) recentRef.current.shift();
+  };
   const chartScrollRef = useRef(null);
   const totalDone = totalWords;
 
@@ -133,13 +146,15 @@ export default function App() {
       activeRef.current = { ...activeRef.current, [cat]: nA };
       setActiveN(activeRef.current);
     }
+    const gradsF = notRecent(grads);
+    const liveF = notRecent(live);
     if (grads.length && (Math.random() < REVIEW_P || !live.length))
-      return grads[Math.floor(Math.random() * grads.length)];
+      return gradsF[Math.floor(Math.random() * gradsF.length)];
     let total = 0;
-    const weights = live.map((w) => { const wt = stats[w]?.h > 0 ? HARD_BOOST : 1; total += wt; return wt; });
+    const weights = liveF.map((w) => { const wt = stats[w]?.h > 0 ? HARD_BOOST : 1; total += wt; return wt; });
     let r = Math.random() * total;
-    for (let i = 0; i < live.length; i++) { r -= weights[i]; if (r <= 0) return live[i]; }
-    return live[live.length - 1];
+    for (let i = 0; i < liveF.length; i++) { r -= weights[i]; if (r <= 0) return liveF[i]; }
+    return liveF[liveF.length - 1];
   };
 
   const recordSeen = (w) => {
@@ -155,17 +170,18 @@ export default function App() {
       recordSeen(nx.w);
     } else if (mode === "pairs") {
       const c = pickCat({ ...ratings, x: 3 }, Object.keys(PAIRS));
-      const list = PAIRS[c];
+      const list = notRecent(PAIRS[c], (p) => p[0] + "/" + p[1]);
       nx = { cat: c, pair: list[Math.floor(Math.random() * list.length)] };
     } else if (mode === "scen") {
       const sc = SCENARIOS.find((s) => s.id === scenario);
       if (!sc) return;
       const stats = statsRef.current;
+      const pool = notRecent(sc.words);
       let total = 0;
-      const ws = sc.words.map((w) => { const wt = stats[w]?.h > 0 ? HARD_BOOST : 1; total += wt; return wt; });
+      const ws = pool.map((w) => { const wt = stats[w]?.h > 0 ? HARD_BOOST : 1; total += wt; return wt; });
       let r = Math.random() * total;
-      let w = sc.words[sc.words.length - 1];
-      for (let i = 0; i < sc.words.length; i++) { r -= ws[i]; if (r <= 0) { w = sc.words[i]; break; } }
+      let w = pool[pool.length - 1];
+      for (let i = 0; i < pool.length; i++) { r -= ws[i]; if (r <= 0) { w = pool[i]; break; } }
       nx = { cat: scenario, w };
       recordSeen(w);
     } else {
@@ -174,10 +190,14 @@ export default function App() {
         nx = { ...cur, idx: cur.idx + 1 };
       } else {
         const c = pickCat(ratings, Object.keys(SENTENCES));
-        const list = SENTENCES[c];
+        const list = notRecent(SENTENCES[c]);
         nx = { cat: c, words: list[Math.floor(Math.random() * list.length)].split(" "), idx: 0 };
       }
     }
+    // remember what just showed so it can't reappear within RECENT_GAP picks
+    if (mode === "pairs") markRecent(nx.pair[0] + "/" + nx.pair[1]);
+    else if (mode === "sents") { if (nx.idx === 0) markRecent(nx.words.join(" ")); }
+    else markRecent(nx.w);
     itemRef.current = nx;
     setItem(nx);
     const label = mode === "words" ? nx.w : mode === "pairs" ? nx.pair[0] + " / " + nx.pair[1] : nx.words[nx.idx];
