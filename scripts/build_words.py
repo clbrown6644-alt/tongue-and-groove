@@ -32,6 +32,21 @@ STOP = {
     # proper nouns / artifacts in the frequency list
     "thomas", "smith", "elizabeth", "australia", "africa", "france", "thats",
     "trump", "april", "february", "friday", "thursday", "saturday",
+    # web-corpus junk: URLs, acronyms, abbreviations (not real spoken words)
+    "http", "https", "www", "com", "org", "net", "gov", "html", "pdf",
+    "nfl", "nba", "nhl", "mlb", "bbc", "cnn", "fbi", "cia", "ltd", "inc",
+    "mrs", "etc", "usa", "dvd", "gps", "app", "apps", "online", "url",
+    # more proper nouns: people, places, brands, months, days
+    "christ", "jesus", "christian", "christians", "catholic", "bible",
+    "muslim", "jewish", "islam", "israel", "england", "ireland", "scotland",
+    "wales", "london", "florida", "francisco", "california", "texas",
+    "virginia", "washington", "boston", "chicago", "manchester", "germany",
+    "german", "russia", "russian", "china", "chinese", "japan", "japanese",
+    "europe", "india", "canada", "mexico", "andrew", "david", "michael",
+    "john", "james", "george", "robert", "william", "richard", "facebook",
+    "google", "twitter", "youtube", "instagram", "iphone", "microsoft",
+    "australian", "centre", "monday", "tuesday", "sunday", "january", "june",
+    "july", "august", "september", "october", "november", "december",
 }
 
 FC_EXCLUDE_END = re.compile(r"(gh|ght|ng|ck|ss|ll|ff|zz|mb|gn|wn|sh|ch|tch|dge|ce|ge|se|ze|ve|le|re|ue|ye|oe)$")

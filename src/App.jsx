@@ -147,11 +147,18 @@ export default function App() {
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;
     if (!audioRef.current) audioRef.current = new Ctx();
-    if (audioRef.current.state === "suspended") audioRef.current.resume();
+    const ctx = audioRef.current;
+    if (ctx.state !== "running") ctx.resume();
+    // iOS only unlocks audio if a source starts inside the tap — play a silent sample
+    const b = ctx.createBufferSource();
+    b.buffer = ctx.createBuffer(1, 1, 22050);
+    b.connect(ctx.destination);
+    b.start(0);
   };
   const playTick = () => {
     const ctx = audioRef.current;
-    if (!ctx || ctx.state !== "running") return;
+    if (!ctx) return;
+    if (ctx.state !== "running") ctx.resume();
     const t = ctx.currentTime;
     const o = ctx.createOscillator();
     const g = ctx.createGain();
@@ -308,10 +315,6 @@ export default function App() {
       updSess({ count: s.count + 1, credits: s.credits + nx.targets.length });
       return;
     }
-    if (paced && playing && cur && !cur.held && (cur.kind === "carry" || (cur.kind === "couple" && cur.beat === 2))) {
-      cur.held = true; // sentences get a second tick of reading time on auto-pace
-      return;
-    }
     let nx;
     if (entry.stage === "warmup") {
       const w = mode === "scen"
@@ -328,12 +331,12 @@ export default function App() {
       const list = notRecent(bank);
       const sent = list[Math.floor(Math.random() * list.length)];
       const w = topTarget(sent);
-      nx = { kind: "couple", sentence: sent, targets: targetsOf(sent), w, beat: 1 };
+      nx = { kind: "couple", sentence: sent, targets: targetsOf(sent), w, beat: 1, hint: !s.hinted };
       recordSeen(w);
       markRecent(sent);
       setSetItems((p) => [...p, w]);
       bump(1, false); // the couple's count advances at beat 2
-      updSess({ credits: s.credits + 1 });
+      updSess({ credits: s.credits + 1, hinted: true });
     } else {
       const bank = mode === "scen" && SCENARIO_SENTENCES[scenario] ? functionalish(SCENARIO_SENTENCES[scenario]) : FUNCTIONAL;
       const list = notRecent(bank);
@@ -373,11 +376,21 @@ export default function App() {
 
   useEffect(() => {
     if (playing && paced) {
-      const step = () => { next(); if (tickOn) playTick(); };
+      let alive = true;
+      const step = () => {
+        if (!alive) return;
+        next();
+        if (tickOn) playTick();
+        // sentences run at half the word pace — twice the reading time
+        const cur = itemRef.current;
+        const base = (60 / wpm) * 1000;
+        const slow = cur && (cur.kind === "carry" || (cur.kind === "couple" && cur.beat === 2));
+        timerRef.current = setTimeout(step, slow ? base * 2 : base);
+      };
       step();
-      timerRef.current = setInterval(step, (60 / wpm) * 1000);
+      return () => { alive = false; clearTimeout(timerRef.current); };
     }
-    return () => clearInterval(timerRef.current);
+    return () => clearTimeout(timerRef.current);
   }, [playing, wpm, mode, ratings, paced, tickOn]);
 
   // M1 — keep the screen awake during a paced drill; release on pause/unmount
@@ -1074,7 +1087,7 @@ export default function App() {
         {item && !sess?.brk && item.kind === "couple" && item.beat === 1 && (
           <>
             <div className="word">{item.w}</div>
-            <div className="meta" style={{ marginTop: 16 }}>say it — its sentence comes next</div>
+            {item.hint && <div className="meta" style={{ marginTop: 16, fontSize: S(18) }}>say it — its sentence comes next</div>}
           </>
         )}
         {item && !sess?.brk && (item.kind === "carry" || (item.kind === "couple" && item.beat === 2)) && (
@@ -1106,8 +1119,11 @@ export default function App() {
               <input type="range" min="10" max="150" step="5" value={wpm}
                 onChange={(e) => setWpm(parseInt(e.target.value))} />
               <span className="paceVal">{wpm} wpm</span>
-              <button className="switch" onClick={() => { ensureAudio(); setTickOn((t) => !t); }}
-                aria-pressed={tickOn} aria-label="Pacing tick sound">
+              <button className="switch" onClick={() => {
+                const on = !tickOn;
+                setTickOn(on);
+                if (on) { ensureAudio(); setTimeout(playTick, 120); } // audible confirmation
+              }} aria-pressed={tickOn} aria-label="Pacing tick sound">
                 <span className={"track" + (tickOn ? " on" : "")}><span className="knob" /></span>
                 <span className="swLbl">Tick</span>
               </button>
