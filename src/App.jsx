@@ -656,7 +656,7 @@ export default function App() {
         </div>
         <div className="card">
           <h2>Why it works</h2>
-          <p className="sub"><b>The right words.</b> Built from the 3,000 most-used words in real conversation, filtered to the patterns that challenge the mouth most — blends, clusters, and TH sounds. You practice what you'll actually say.</p>
+          <p className="sub"><b>The right words.</b> Built from the 1,500 most-used words in real conversation, filtered to the patterns that challenge the mouth most — blends, clusters, and TH sounds. You practice what you'll actually say.</p>
           <p className="sub"><b>Tuned to you.</b> You score six sound types from 1–5. Practice leans toward your hardest, and any word you mark as hard comes back three times as often until you beat it.</p>
           <p className="sub"><b>Real life built in.</b> Ready-made word sets for the restaurant, the doctor's office, phone calls, and more.</p>
           <p className="sub"><b>Momentum you can see.</b> Daily rings, streaks, and milestone awards make every session count.</p>

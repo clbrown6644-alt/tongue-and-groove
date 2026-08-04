@@ -2,7 +2,7 @@ import { WORD_TIERS, WORD_CORE, WORD_SLP, WORDS_PS } from "./words.gen.js";
 export { WORD_TIERS };
 
 // Practice order per category: 2 core (rank 1-1,000) words for every 1
-// SLP-informed addition (clinically valuable words from ranks 1,001-3,000 —
+// SLP-informed addition (clinically valuable words from ranks 1,001-1,500 —
 // 3+ syllables, heavy clusters, or place-switchers). Both lists come
 // syllable-sorted (short first), so decks ramp word length as they unlock.
 // "ps" is the hidden place-switcher category — practiced, never shown in scoring.

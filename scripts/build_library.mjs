@@ -25,7 +25,7 @@ status: regenerated ${stamp} — junk-word purge + staged-session sentence banks
 
 # Tongue and Groove — Word Library
 
-Every word and sentence in the app. The word library is built two ways at once: a CORE of the most common conversational English words (rank 1–1,000, filtered to motor-difficult patterns), plus SLP-INFORMED ADDITIONS from ranks 1,001–3,000 kept only when clinically valuable (3+ syllables, a heavy consonant cluster, or a place-switcher). Web-corpus junk — URLs, acronyms, proper nouns, brand names — is filtered out: every entry is a real spoken word that exercises the tongue. Practice decks deal 2 core words for every 1 addition, ordered short-words-first so length ramps up.
+Every word and sentence in the app. The word library is built two ways at once: a CORE of the most common conversational English words (rank 1–1,000, filtered to motor-difficult patterns), plus SLP-INFORMED ADDITIONS from ranks 1,001–1,500 kept only when clinically valuable (3+ syllables, a heavy consonant cluster, or a place-switcher). Web-corpus junk — URLs, acronyms, proper nouns, brand names — is filtered out: every entry is a real spoken word that exercises the tongue. Practice decks deal 2 core words for every 1 addition, ordered short-words-first so length ramps up.
 
 Since the ${stamp.slice(0, 7)} practice restructure, a session runs warm-up words → 3×10 word→sentence couples → carryover. The couples draw on the sentence banks below; only target words (2+ syllables, a cluster, or a TH — never "the/was/and") count toward practice totals.
 
@@ -36,7 +36,7 @@ Since the ${stamp.slice(0, 7)} practice restructure, a session runs warm-up word
 for (const c of CATS) {
   md += `## ${c.name} (${WORD_CORE[c.id].length} core + ${(WORD_SLP[c.id] || []).length} SLP additions)\n\n`;
   md += `### Core — most common 1,000 (${WORD_CORE[c.id].length})\n\n${WORD_CORE[c.id].join(", ")}\n\n`;
-  md += `### SLP additions — ranks 1,001–3,000, clinically filtered (${(WORD_SLP[c.id] || []).length})\n\n${(WORD_SLP[c.id] || []).join(", ")}\n\n`;
+  md += `### SLP additions — ranks 1,001–1,500, clinically filtered (${(WORD_SLP[c.id] || []).length})\n\n${(WORD_SLP[c.id] || []).join(", ")}\n\n`;
 }
 
 md += `## Place-switchers — hidden category (${WORDS_PS.length} words)\n\n### Practiced in rotation, never shown in scoring. Words forcing lips ↔ tongue-tip ↔ back-of-tongue jumps.\n\n${WORDS_PS.join(", ")}\n\n`;

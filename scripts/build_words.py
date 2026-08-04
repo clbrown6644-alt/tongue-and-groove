@@ -3,9 +3,9 @@
 
 v2 (2026-08-04): core-1000 + SLP-informed additions + hidden place-switcher list.
 
-- WORD_TIERS: full top-3000 in 3 frequency tiers per category (reference/docs)
+- WORD_TIERS: full top-1500 in 2 frequency tiers per category (reference/docs)
 - WORD_CORE:  rank 1-1000 words per category ("most common" base)
-- WORD_SLP:   clinically valuable words from rank 1001-3000 — kept only if
+- WORD_SLP:   clinically valuable words from rank 1001-1500 — kept only if
               3+ syllables, contains a 3-consonant cluster, or is a
               place-switcher (what an SLP would add beyond frequency)
 - WORDS_PS:   hidden place-switcher category — words forcing the tongue/lips
@@ -20,8 +20,8 @@ import json
 import re
 from wordfreq import top_n_list, word_frequency, zipf_frequency
 
-TOP_N = 3000
-TIERS = [(0, 1000), (1000, 2000), (2000, 3000)]
+TOP_N = 1500
+TIERS = [(0, 1000), (1000, 1500)]
 
 STOP = {
     "could", "would", "should", "walk", "talk", "talked", "talking", "walking",
@@ -91,7 +91,7 @@ HAS_TRI_CLUSTER = re.compile(r"[bcdfghjklmnpqrstvwxz]{3}")
 def slp_valuable(w):
     return syllables(w) >= 3 or HAS_TRI_CLUSTER.search(w) or is_place_switcher(w)
 
-# clinical classics an SLP would drill that fall outside the top-3000
+# clinical classics an SLP would drill that fall outside the top-1500
 PS_HAND_LIST = [
     "buttercup", "basketball", "cucumber", "helicopter", "calculator",
     "refrigerator", "thermometer", "caterpillar", "watermelon", "motorcycle",
@@ -106,7 +106,7 @@ def syl_sorted(words):
 words = [w for w in top_n_list("en", TOP_N * 2)
          if w.isalpha() and len(w) >= 3 and w not in STOP][:TOP_N]
 
-tiers_out = {c: [[], [], []] for c in CATS}
+tiers_out = {c: [[] for _ in TIERS] for c in CATS}
 core = {c: [] for c in CATS}
 slp = {c: [] for c in CATS}
 for rank, w in enumerate(words):
@@ -127,7 +127,7 @@ slp = {c: syl_sorted(v) for c, v in slp.items()}
 ps = syl_sorted(ps)
 
 print("core (rank 1-1000):", {c: len(v) for c, v in core.items()})
-print("slp adds (1001-3000, clinically filtered):", {c: len(v) for c, v in slp.items()})
+print("slp adds (1001-1500, clinically filtered):", {c: len(v) for c, v in slp.items()})
 print("place-switchers (hidden):", len(ps), "e.g.", ", ".join(ps[:8]), "...")
 print("ps hand-list additions:", len(PS_HAND_LIST))
 
