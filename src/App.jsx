@@ -57,7 +57,9 @@ function Ring({ r, sw, frac, color, overColor }) {
 }
 
 export default function App() {
-  const [screen, setScreen] = useState(saved?.ratings ? "progress" : "assess"); // progress is the landing page · assess | drill | summary | settings
+  const [screen, setScreen] = useState(saved?.ratings ? "progress" : "landing"); // landing | assess | drill | summary | settings | progress | rescore
+  const [draft, setDraft] = useState(null); // working copy for the rescore screen
+  const [lastRescoreSets, setLastRescoreSets] = useState(saved?.lastRescoreSets ?? 0);
   const [ratings, setRatings] = useState(saved?.ratings ?? { th: 3, tri: 3, lb: 3, rb: 3, sb: 3, fc: 3 });
   const [mode, setMode] = useState("words"); // words | pairs | sents | scen
   const [scenario, setScenario] = useState(saved?.scenario ?? null); // selected scenario pack id
@@ -110,6 +112,8 @@ export default function App() {
   const totalDone = totalWords;
 
   const todayKey = dkey(new Date());
+  const totalSetsAll = Object.values(hist).reduce((a, d) => a + (d.s || 0), 0);
+  const rescoreDue = totalSetsAll - lastRescoreSets >= 20;
   const todayEntry = hist[todayKey] || { w: 0, p: 0, s: 0 };
   const todayWords = todayEntry.w;
   const todayPairs = todayEntry.p;
@@ -122,8 +126,8 @@ export default function App() {
 
   // persist everything that should survive a close (A8 / M-persist)
   useEffect(() => {
-    saveState({ ratings, paced, wpm, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN, scenario, recent: recentRef.current });
-  }, [ratings, paced, wpm, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN, scenario]);
+    saveState({ ratings, paced, wpm, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN, scenario, lastRescoreSets, recent: recentRef.current });
+  }, [ratings, paced, wpm, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN, scenario, lastRescoreSets]);
 
   const bump = (inc, isPair) => {
     setTotalWords((t) => t + inc);
@@ -168,11 +172,34 @@ export default function App() {
     setWordStats((s) => ({ ...s, [w]: { s: (s[w]?.s || 0) + 1, h: s[w]?.h || 0 } }));
   };
 
+  // Words mode picks the category by rating × words-remaining, so big categories
+  // (final clusters: 592 words) get proportionally more airtime than small ones
+  // (3-consonant clusters: 41) and every category finishes around the same time.
+  // Ratings still tilt it: a 5-rated category gets 5× the time per remaining word.
+  const pickCatProportional = () => {
+    const stats = statsRef.current;
+    const cats = Object.keys(WORDS);
+    let total = 0;
+    const weights = cats.map((k) => {
+      let remaining = 0;
+      for (const w of WORDS[k]) {
+        const st = stats[w];
+        if (!(st && st.s >= GRAD_X && !(st.h > 0))) remaining++;
+      }
+      const wt = (ratings[k] || 3) * Math.max(1, remaining);
+      total += wt;
+      return wt;
+    });
+    let r = Math.random() * total;
+    for (let i = 0; i < cats.length; i++) { r -= weights[i]; if (r <= 0) return cats[i]; }
+    return cats[cats.length - 1];
+  };
+
   const next = () => {
     if (doneRef.current >= setSize) return;
     let nx;
     if (mode === "words") {
-      const c = pickCat(ratings, Object.keys(WORDS));
+      const c = pickCatProportional();
       nx = { cat: c, w: pickWord(c) };
       recordSeen(nx.w);
     } else if (mode === "pairs") {
@@ -300,7 +327,7 @@ export default function App() {
     .app { min-height: 100vh; min-height: 100dvh; background: ${T.bg}; background-image: ${T.tex}; color: ${T.ink}; font-family: 'Atkinson Hyperlegible', sans-serif; display: flex; flex-direction: column; padding-bottom: env(safe-area-inset-bottom); }
     .app button:focus-visible, .app input:focus-visible { outline: 3px solid ${T.blue}; outline-offset: 2px; }
     .top { padding: calc(18px + env(safe-area-inset-top)) 20px 10px; display: flex; align-items: center; justify-content: space-between; }
-    .logo { font-family: 'Bricolage Grotesque'; font-weight: 700; font-size: 20px; letter-spacing: -0.01em; border: 2px solid ${T.ink}; border-radius: 14px; padding: 8px 14px; }
+    .logo { font-family: 'Bricolage Grotesque'; font-weight: 700; font-size: 20px; letter-spacing: -0.01em; border: 2px solid ${T.ink}; border-radius: 14px; padding: 8px 14px; background: none; color: ${T.ink}; cursor: pointer; }
     .logo span { color: ${dark ? T.blue : T.blue}; }
     .logo em { font-style: normal; color: ${T.amber}; }
     .hdrBtns { display: flex; gap: 8px; }
@@ -411,9 +438,34 @@ export default function App() {
     @media (prefers-reduced-motion: reduce) { .knob, .setFill { transition: none; } .awardWrap, .awardFade { animation: none; } }
   `;
 
+  // Ranks categories by the user's actual hard-mark rate and drafts new 1–5
+  // ratings from it (hardest category gets 5, scaled down; overridable).
+  const goRescore = () => {
+    const stats = statsRef.current;
+    const rows = CATS.map((c) => {
+      let seen = 0; const hard = [];
+      WORDS[c.id].forEach((w) => {
+        const st = stats[w];
+        if (st && (st.s > 0 || st.h > 0)) seen++;
+        if (st?.h > 0) hard.push(w);
+      });
+      return { ...c, seen, hard, ratio: seen >= 5 ? hard.length / seen : 0 };
+    }).sort((a, b) => b.ratio - a.ratio);
+    const maxR = Math.max(...rows.map((r) => r.ratio));
+    const sugg = {};
+    rows.forEach((r) => {
+      sugg[r.id] = maxR > 0 ? Math.max(1, Math.min(5, Math.round(1 + 4 * (r.ratio / maxR)))) : (ratings[r.id] || 3);
+    });
+    setDraft({ rows, sugg });
+    setPlaying(false);
+    setScreen("rescore");
+  };
+
   const Header = ({ right }) => (
     <div className="top">
-      <div className="logo">Tongue <em>&amp;</em> <span>Groove</span></div>
+      <button className="logo" onClick={() => { setPlaying(false); setScreen("landing"); }} aria-label="About Tongue and Groove">
+        Tongue <em>&amp;</em> <span>Groove</span>
+      </button>
       <div className="hdrBtns">{right}</div>
     </div>
   );
@@ -427,6 +479,69 @@ export default function App() {
       ))}
     </div>
   );
+
+  if (screen === "landing") {
+    const returning = totalWords > 0 || totalSetsAll > 0;
+    return (
+      <div className="app">
+        <style>{css}</style>
+        <div className="top" style={{ justifyContent: "center", paddingTop: "calc(34px + env(safe-area-inset-top))" }}>
+          <span className="logo" style={{ fontSize: 26, padding: "12px 20px", cursor: "default" }}>Tongue <em>&amp;</em> <span>Groove</span></span>
+        </div>
+        <div className="card">
+          <h2>Practice speaking. Out loud. Every day.</h2>
+          <p className="sub" style={{ marginBottom: 0 }}>A daily speech workout for people rebuilding clear speech — after a stroke, with Parkinson's, or with apraxia. Free, private to your device, no account needed.</p>
+        </div>
+        <div className="card">
+          <h2>Why it works</h2>
+          <p className="sub"><b>The right words.</b> Built from the 3,000 most-used words in real conversation, filtered to the patterns that challenge the mouth most — blends, clusters, and TH sounds. You practice what you'll actually say.</p>
+          <p className="sub"><b>Tuned to you.</b> You score six sound types from 1–5. Practice leans toward your hardest, and any word you mark as hard comes back three times as often until you beat it.</p>
+          <p className="sub"><b>Real life built in.</b> Ready-made word sets for the restaurant, the doctor's office, phone calls, and more.</p>
+          <p className="sub"><b>Momentum you can see.</b> Daily rings, streaks, and milestone awards make every session count.</p>
+          <p className="sub" style={{ marginBottom: 0 }}><i>A practice tool, not medical treatment — keep working with your care team.</i></p>
+        </div>
+        <button className="cta" onClick={() => setScreen("assess")}>START</button>
+        {returning && (
+          <button className="ghost" style={{ display: "block", width: "calc(100% - 32px)", margin: "0 16px 20px" }}
+            onClick={() => setScreen("progress")}>Back to my practice</button>
+        )}
+        <SizeRow />
+      </div>
+    );
+  }
+
+  if (screen === "rescore" && draft) {
+    return (
+      <div className="app">
+        <style>{css}</style>
+        <Header right={<button className="hdrBtn" onClick={() => setScreen("progress")}>Progress</button>} />
+        <div className="card">
+          <h2>Your hardest types, ranked from hardest to easiest</h2>
+          <p className="sub">Based on the words you marked hard. We've suggested new scores — <b>5 = most practice.</b> Change any, then save.</p>
+          {draft.rows.map((r) => (
+            <div className="catRow" key={r.id}>
+              <div className="catTop">
+                <span className="catName">{r.name}</span>
+                <span className="catEx">{r.hard.length ? "e.g. " + r.hard.slice(0, 5).join(", ") : r.seen >= 5 ? "no hard words yet" : "not enough practice yet"}</span>
+              </div>
+              <div className="dots">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button key={n} className={"dot" + (draft.sugg[r.id] === n ? " on" : "")}
+                    onClick={() => setDraft((d) => ({ ...d, sugg: { ...d.sugg, [r.id]: n } }))}>{n}</button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        <button className="cta" onClick={() => {
+          setRatings((rt) => ({ ...rt, ...draft.sugg }));
+          setLastRescoreSets(totalSetsAll);
+          setScreen("progress");
+        }}>Save my new ratings</button>
+        <SizeRow />
+      </div>
+    );
+  }
 
   if (screen === "assess") {
     return (
@@ -488,6 +603,13 @@ export default function App() {
             </div>
           </div>
         )}
+        {rescoreDue && (
+          <div className="card" style={{ textAlign: "center" }}>
+            <h2 style={{ marginBottom: 6 }}>{totalSetsAll} sets in — time to re-check your scores</h2>
+            <p className="sub">See your hardest sound types ranked, with new suggested ratings based on the words you marked hard.</p>
+            <button className="cta" style={{ width: "100%", margin: 0 }} onClick={() => { applyHardMarks(); goRescore(); }}>See my hardest sounds</button>
+          </div>
+        )}
         <button className="cta" onClick={startNewSet}>Next set</button>
         <SizeRow />
       </div>
@@ -523,7 +645,7 @@ export default function App() {
           </div>
           <div className="setting">
             <span className="setLbl">Sound ratings</span>
-            <button className="hdrBtn" onClick={() => { setPlaying(false); setScreen("assess"); }}>Edit</button>
+            <button className="hdrBtn" onClick={() => { if (totalWords > 0) goRescore(); else { setPlaying(false); setScreen("assess"); } }}>Edit</button>
           </div>
         </div>
         <SizeRow />
