@@ -103,4 +103,6 @@ html += "</body></html>";
 const tmpHtml = "/tmp/tg-word-library.html";
 writeFileSync(tmpHtml, html);
 execSync(`textutil -convert docx -output "${VAULT}/Tongue and Groove Word Library.docx" "${tmpHtml}"`);
+// CB's copy in the project folder — same file, easier to find than the vault
+execSync(`cp "${VAULT}/Tongue and Groove Word Library.docx" "/Users/chrisbrown/Projects/Tongue-Groove/Tongue and Groove Word Library.docx"`);
 console.log(`wrote Word Library .md + .docx (${stamp}) — ${nCore + nSlp} words, ${nSent + nScen + FUNCTIONAL.length} sentences`);
