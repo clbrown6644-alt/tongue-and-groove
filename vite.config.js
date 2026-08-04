@@ -11,7 +11,7 @@ export default defineConfig({
       includeAssets: ["icons/apple-touch-icon.png"],
       manifest: {
         name: "Tongue & Groove",
-        short_name: "T&G",
+        short_name: "Tongue & Groove",
         description: "Speech practice — paced word drills",
         theme_color: "#012169",
         background_color: "#F3ECDC",

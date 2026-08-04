@@ -8,6 +8,15 @@ const isIOS = typeof navigator !== "undefined" && /iP(hone|ad|od)/.test(navigato
 const isStandalone =
   typeof window !== "undefined" &&
   (window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true);
+const isAndroid = typeof navigator !== "undefined" && /Android/.test(navigator.userAgent);
+
+// adaptive word selection tuning
+const GRAD_X = 5;        // clean exposures before a word graduates to the review pool
+const HARD_BOOST = 3;    // hard-marked words appear 3× as often as normal words
+const REVIEW_P = 0.1;    // share of picks that revisit graduated words so they aren't forgotten
+const ACTIVE_START = 40; // words per category in the starting deck (most common first)
+const ACTIVE_MIN = 25;   // when fewer un-graduated words remain, unlock more
+const ACTIVE_STEP = 15;  // how many next-most-common words unlock per refill
 
 function pickCat(ratings, keys) {
   const pool = [];
@@ -65,10 +74,17 @@ export default function App() {
   const [fontScale, setFontScale] = useState(saved?.fontScale ?? 1); // 1 | 1.15 | 1.3
   const [feedbackOn, setFeedbackOn] = useState(saved?.feedbackOn ?? true);
   const [iosHintDismissed, setIosHintDismissed] = useState(saved?.iosHintDismissed ?? false);
+  const [wordStats, setWordStats] = useState(saved?.wordStats ?? {}); // { word: { s: seen count, h: hard level } }
+  const [activeN, setActiveN] = useState(saved?.activeN ?? {});       // words unlocked so far per category
+  const statsRef = useRef(wordStats);
+  const activeRef = useRef(activeN);
+  useEffect(() => { statsRef.current = wordStats; }, [wordStats]);
+  useEffect(() => { activeRef.current = activeN; }, [activeN]);
   const timerRef = useRef(null);
   const itemRef = useRef(null);
   const doneRef = useRef(0);
   const wakeRef = useRef(null);
+  const marksAppliedRef = useRef(true); // false only while a fresh summary awaits its hard-word taps
   const chartScrollRef = useRef(null);
   const totalDone = totalWords;
 
@@ -85,8 +101,8 @@ export default function App() {
 
   // persist everything that should survive a close (A8 / M-persist)
   useEffect(() => {
-    saveState({ ratings, paced, wpm, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed });
-  }, [ratings, paced, wpm, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed]);
+    saveState({ ratings, paced, wpm, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN });
+  }, [ratings, paced, wpm, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN]);
 
   const bump = (inc, isPair) => {
     setTotalWords((t) => t + inc);
@@ -97,13 +113,45 @@ export default function App() {
     });
   };
 
+  // Adaptive pick: weighted among the "active" deck (most common words first).
+  // Hard-marked words appear HARD_BOOST× as often; words seen GRAD_X times with
+  // no hard mark graduate to a review pool (REVIEW_P of picks); when the live
+  // deck runs low, the next most common words unlock.
+  const pickWord = (cat) => {
+    const list = WORDS[cat];
+    const stats = statsRef.current;
+    let aN = Math.min(activeRef.current[cat] ?? ACTIVE_START, list.length);
+    const grads = [], live = [];
+    for (let i = 0; i < aN; i++) {
+      const w = list[i], st = stats[w];
+      if (st && st.s >= GRAD_X && !(st.h > 0)) grads.push(w); else live.push(w);
+    }
+    if (live.length < ACTIVE_MIN && aN < list.length) {
+      const nA = Math.min(aN + ACTIVE_STEP, list.length);
+      for (let i = aN; i < nA; i++) live.push(list[i]);
+      activeRef.current = { ...activeRef.current, [cat]: nA };
+      setActiveN(activeRef.current);
+    }
+    if (grads.length && (Math.random() < REVIEW_P || !live.length))
+      return grads[Math.floor(Math.random() * grads.length)];
+    let total = 0;
+    const weights = live.map((w) => { const wt = stats[w]?.h > 0 ? HARD_BOOST : 1; total += wt; return wt; });
+    let r = Math.random() * total;
+    for (let i = 0; i < live.length; i++) { r -= weights[i]; if (r <= 0) return live[i]; }
+    return live[live.length - 1];
+  };
+
+  const recordSeen = (w) => {
+    setWordStats((s) => ({ ...s, [w]: { s: (s[w]?.s || 0) + 1, h: s[w]?.h || 0 } }));
+  };
+
   const next = () => {
     if (doneRef.current >= setSize) return;
     let nx;
     if (mode === "words") {
       const c = pickCat(ratings, Object.keys(WORDS));
-      const list = WORDS[c];
-      nx = { cat: c, w: list[Math.floor(Math.random() * list.length)] };
+      nx = { cat: c, w: pickWord(c) };
+      recordSeen(nx.w);
     } else if (mode === "pairs") {
       const c = pickCat({ ...ratings, x: 3 }, Object.keys(PAIRS));
       const list = PAIRS[c];
@@ -165,6 +213,7 @@ export default function App() {
         return { ...h, [k]: { ...d, s: d.s + 1 } };
       });
       setDifficult({});
+      marksAppliedRef.current = false;
       setScreen("summary");
     }
   }, [setItems]);
@@ -173,7 +222,29 @@ export default function App() {
     if (chartScrollRef.current) chartScrollRef.current.scrollLeft = chartScrollRef.current.scrollWidth;
   }, [range, screen]);
 
+  // Fold the summary-screen "hard" taps into word stats: marked words get the
+  // hard boost and restart their clean streak; unmarked appearances cool a
+  // previous hard flag down one level.
+  const applyHardMarks = () => {
+    if (marksAppliedRef.current || !setItems.length) return;
+    marksAppliedRef.current = true;
+    const marks = difficult;
+    const labels = setItems;
+    setWordStats((s) => {
+      const ns = { ...s };
+      labels.forEach((label, i) => {
+        label.split(" / ").forEach((w) => {
+          const cur = ns[w] || { s: 0, h: 0 };
+          if (marks[i]) ns[w] = { s: 0, h: 2 };
+          else if (cur.h > 0) ns[w] = { ...cur, h: cur.h - 1 };
+        });
+      });
+      return ns;
+    });
+  };
+
   const startNewSet = () => {
+    applyHardMarks();
     doneRef.current = 0;
     itemRef.current = null;
     setSetItems([]);
@@ -288,6 +359,9 @@ export default function App() {
     .stepVal { font-weight: 700; font-size: ${S(16)}; min-width: 40px; text-align: center; }
     .hintRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .hintTxt { font-size: ${S(15)}; line-height: 1.5; }
+    .instSteps { display: flex; flex-direction: column; gap: 14px; margin-top: 6px; }
+    .instStep { display: flex; align-items: center; gap: 14px; }
+    .instIcon { flex: 0 0 auto; }
     @media (max-width: 640px) {
       .tiles { flex-direction: column; }
       .ringsRow { gap: 22px; justify-content: center; }
@@ -346,7 +420,7 @@ export default function App() {
     return (
       <div className="app">
         <style>{css}</style>
-        <Header right={<button className="hdrBtn" onClick={() => setScreen("progress")}>Progress</button>} />
+        <Header right={<button className="hdrBtn" onClick={() => { applyHardMarks(); setScreen("progress"); }}>Progress</button>} />
         <div className="card" style={{ textAlign: "center", paddingTop: 26 }}>
           {award && (
             <div className={"awardWrap" + (award.set ? " awardFade" : "")}>
@@ -451,17 +525,61 @@ export default function App() {
     { const d = new Date(now);
       if (!((hist[todayKey]?.w ?? 0) > 0)) d.setDate(d.getDate() - 1); // today not practiced yet doesn't break the streak
       while ((hist[dkey(d)]?.w ?? 0) > 0) { streak++; d.setDate(d.getDate() - 1); } }
-    const showIosHint = isIOS && !isStandalone && !iosHintDismissed;
+    const showInstall = (isIOS || isAndroid) && !isStandalone && !iosHintDismissed;
+    const iosBlue = "#0A7AFF";
+    const ShareIcon = () => (
+      <svg className="instIcon" width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
+        <rect x="2" y="2" width="40" height="40" rx="10" fill={T.card} stroke={T.line} strokeWidth="1.5" />
+        <rect x="13" y="18" width="18" height="16" rx="3" fill="none" stroke={iosBlue} strokeWidth="2.5" />
+        <path d="M22 25V8" stroke={iosBlue} strokeWidth="2.5" strokeLinecap="round" />
+        <path d="M16.5 13L22 7.5 27.5 13" fill="none" stroke={iosBlue} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+    const AddIcon = () => (
+      <svg className="instIcon" width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
+        <rect x="2" y="2" width="40" height="40" rx="10" fill={T.card} stroke={T.line} strokeWidth="1.5" />
+        <rect x="11" y="11" width="22" height="22" rx="6" fill="none" stroke={T.ink} strokeWidth="2.5" />
+        <path d="M22 16.5v11M16.5 22h11" stroke={T.ink} strokeWidth="2.5" strokeLinecap="round" />
+      </svg>
+    );
+    const AppIcon = () => (
+      <svg className="instIcon" width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
+        <rect x="2" y="2" width="40" height="40" rx="10" fill="#012169" />
+        <text x="22" y="28" textAnchor="middle" fontFamily="Helvetica, Arial, sans-serif" fontWeight="bold" fontSize="15">
+          <tspan fill="#FFFDF6">T</tspan><tspan fill="#E9B44C">&amp;</tspan><tspan fill="#FFFDF6">G</tspan>
+        </text>
+      </svg>
+    );
+    const MenuIcon = () => (
+      <svg className="instIcon" width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
+        <rect x="2" y="2" width="40" height="40" rx="10" fill={T.card} stroke={T.line} strokeWidth="1.5" />
+        <circle cx="22" cy="12.5" r="2.6" fill={T.ink} /><circle cx="22" cy="22" r="2.6" fill={T.ink} /><circle cx="22" cy="31.5" r="2.6" fill={T.ink} />
+      </svg>
+    );
     return (
       <div className="app">
         <style>{css}</style>
         <Header right={<><button className="hdrBtn" onClick={() => { if (setItems.length >= setSize) startNewSet(); else setScreen("drill"); }}>Practice</button><button className="hdrBtn" onClick={() => setScreen("settings")}>Settings</button></>} />
-        {showIosHint && (
+        {showInstall && (
           <div className="card">
-            <div className="hintRow">
-              <div className="hintTxt"><b>Put this app on your Home Screen:</b> tap the Share button <span aria-hidden="true">(the square with the arrow)</span>, then <b>"Add to Home Screen."</b> It works offline once installed.</div>
-              <button className="ghost" style={{ flex: "0 0 auto" }} onClick={() => setIosHintDismissed(true)}>Got it</button>
+            <h2>Get the app on your phone</h2>
+            <p className="sub" style={{ marginBottom: 10 }}>Three taps — then it opens full screen and works with no internet.</p>
+            <div className="instSteps">
+              {isIOS ? (
+                <>
+                  <div className="instStep"><ShareIcon /><div className="hintTxt"><b>1.</b> In <b>Safari</b>, tap the <b>Share</b> button — the square with the up arrow, bottom of the screen</div></div>
+                  <div className="instStep"><AddIcon /><div className="hintTxt"><b>2.</b> Scroll down the list and tap <b>Add to Home Screen</b></div></div>
+                  <div className="instStep"><AppIcon /><div className="hintTxt"><b>3.</b> Tap <b>Add</b>, then open <b>Tongue &amp; Groove</b> from your home screen — not from Safari</div></div>
+                </>
+              ) : (
+                <>
+                  <div className="instStep"><MenuIcon /><div className="hintTxt"><b>1.</b> In <b>Chrome</b>, tap the <b>⋮ menu</b> in the top corner</div></div>
+                  <div className="instStep"><AddIcon /><div className="hintTxt"><b>2.</b> Tap <b>Add to Home screen</b> (or <b>Install app</b>)</div></div>
+                  <div className="instStep"><AppIcon /><div className="hintTxt"><b>3.</b> Open <b>Tongue &amp; Groove</b> from your home screen</div></div>
+                </>
+              )}
             </div>
+            <button className="cta" style={{ width: "100%", margin: "16px 0 0" }} onClick={() => setIosHintDismissed(true)}>Got it — hide these steps</button>
           </div>
         )}
         <div className="tiles">
