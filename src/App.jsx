@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { WORDS, PAIRS, SENTENCES, CATS, MILESTONES, GOALS } from "./data.js";
+import { WORDS, PAIRS, SENTENCES, CATS, MILESTONES, GOALS, SCENARIOS } from "./data.js";
 import { loadState, saveState, dkey } from "./storage.js";
 
 const saved = loadState();
@@ -58,7 +58,8 @@ function Ring({ r, sw, frac, color, overColor }) {
 export default function App() {
   const [screen, setScreen] = useState(saved?.ratings ? "progress" : "assess"); // progress is the landing page · assess | drill | summary | settings
   const [ratings, setRatings] = useState(saved?.ratings ?? { th: 3, tri: 3, lb: 3, rb: 3, sb: 3, fc: 3 });
-  const [mode, setMode] = useState("words"); // words | pairs | sents
+  const [mode, setMode] = useState("words"); // words | pairs | sents | scen
+  const [scenario, setScenario] = useState(saved?.scenario ?? null); // selected scenario pack id
   const [paced, setPaced] = useState(saved?.paced ?? false); // false = self-paced (tap Next)
   const [wpm, setWpm] = useState(saved?.wpm ?? 25);
   const [playing, setPlaying] = useState(false);
@@ -101,8 +102,8 @@ export default function App() {
 
   // persist everything that should survive a close (A8 / M-persist)
   useEffect(() => {
-    saveState({ ratings, paced, wpm, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN });
-  }, [ratings, paced, wpm, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN]);
+    saveState({ ratings, paced, wpm, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN, scenario });
+  }, [ratings, paced, wpm, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN, scenario]);
 
   const bump = (inc, isPair) => {
     setTotalWords((t) => t + inc);
@@ -156,6 +157,17 @@ export default function App() {
       const c = pickCat({ ...ratings, x: 3 }, Object.keys(PAIRS));
       const list = PAIRS[c];
       nx = { cat: c, pair: list[Math.floor(Math.random() * list.length)] };
+    } else if (mode === "scen") {
+      const sc = SCENARIOS.find((s) => s.id === scenario);
+      if (!sc) return;
+      const stats = statsRef.current;
+      let total = 0;
+      const ws = sc.words.map((w) => { const wt = stats[w]?.h > 0 ? HARD_BOOST : 1; total += wt; return wt; });
+      let r = Math.random() * total;
+      let w = sc.words[sc.words.length - 1];
+      for (let i = 0; i < sc.words.length; i++) { r -= ws[i]; if (r <= 0) { w = sc.words[i]; break; } }
+      nx = { cat: scenario, w };
+      recordSeen(w);
     } else {
       const cur = itemRef.current;
       if (cur && cur.words && cur.idx < cur.words.length - 1) {
@@ -660,9 +672,28 @@ export default function App() {
         <button className={"tab" + (mode === "words" ? " on" : "")} onClick={() => switchMode("words")}>Words</button>
         <button className={"tab" + (mode === "pairs" ? " on" : "")} onClick={() => switchMode("pairs")}>Sound pairs</button>
         <button className={"tab" + (mode === "sents" ? " on" : "")} onClick={() => switchMode("sents")}>Sentences</button>
+        <button className={"tab" + (mode === "scen" ? " on" : "")} onClick={() => switchMode("scen")}>Scenarios</button>
       </div>
+      {mode === "scen" && scenario && (
+        <div style={{ textAlign: "center", margin: "6px 16px 0" }}>
+          <button className="ghost" style={{ padding: "8px 16px" }}
+            onClick={() => { setPlaying(false); setScenario(null); setItem(null); itemRef.current = null; }}>
+            {SCENARIOS.find((s) => s.id === scenario)?.name} — change
+          </button>
+        </div>
+      )}
       <div className="stage">
-        {!item && (
+        {mode === "scen" && !scenario && (
+          <div style={{ textAlign: "center" }}>
+            <div className="idle" style={{ margin: "0 auto 16px" }}>Pick a situation — practice the words you actually need there.</div>
+            <div className="wordGrid" style={{ justifyContent: "center" }}>
+              {SCENARIOS.map((s) => (
+                <button key={s.id} className="wchip" onClick={() => setScenario(s.id)}>{s.name}</button>
+              ))}
+            </div>
+          </div>
+        )}
+        {!item && !(mode === "scen" && !scenario) && (
           <div className="idle">
             {paced
               ? "Press Start. Words appear one at a time — say each one out loud before the next arrives."
@@ -671,7 +702,7 @@ export default function App() {
                 : "Tap Next to begin. Say each word out loud, then tap Next when you're ready."}
           </div>
         )}
-        {item && mode === "words" && <div className="word">{item.w}</div>}
+        {item && (mode === "words" || mode === "scen") && <div className="word">{item.w}</div>}
         {item && mode === "pairs" && item.pair && (
           <div className="pairWrap">
             <div className="word">{item.pair[0]}</div>
@@ -704,7 +735,7 @@ export default function App() {
         <div className="btnRow">
           {paced ? (
             <>
-              <button className={"play" + (playing ? " stop" : "")} onClick={() => setPlaying(!playing)}>
+              <button className={"play" + (playing ? " stop" : "")} onClick={() => { if (mode === "scen" && !scenario) return; setPlaying(!playing); }}>
                 {playing ? "Pause" : "Start"}
               </button>
               <button className="ghost" onClick={next}>Next</button>
