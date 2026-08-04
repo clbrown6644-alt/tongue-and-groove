@@ -1,10 +1,50 @@
-import { WORD_TIERS } from "./words.gen.js";
+import { WORD_TIERS, WORD_CORE, WORD_SLP, WORDS_PS } from "./words.gen.js";
+export { WORD_TIERS };
 
-// Rank-ordered per category (most common first): tier1 + tier2 + tier3.
-// Generated from wordfreq top-3000 conversational English — see scripts/build_words.py
-export const WORDS = Object.fromEntries(
-  Object.entries(WORD_TIERS).map(([cat, tiers]) => [cat, tiers.flat()])
-);
+// Practice order per category: 2 core (rank 1-1,000) words for every 1
+// SLP-informed addition (clinically valuable words from ranks 1,001-3,000 —
+// 3+ syllables, heavy clusters, or place-switchers). Both lists come
+// syllable-sorted (short first), so decks ramp word length as they unlock.
+// "ps" is the hidden place-switcher category — practiced, never shown in scoring.
+function mix2to1(core, adds) {
+  const out = [];
+  let i = 0, j = 0;
+  while (i < core.length || j < adds.length) {
+    for (let k = 0; k < 2 && i < core.length; k++) out.push(core[i++]);
+    if (j < adds.length) out.push(adds[j++]);
+  }
+  return out;
+}
+export const WORDS = {
+  ...Object.fromEntries(Object.keys(WORD_CORE).map((c) => [c, mix2to1(WORD_CORE[c], WORD_SLP[c] || [])])),
+  ps: WORDS_PS,
+};
+
+// Why 2:1 and not 50/50: common words carry real-life carryover and confidence;
+// clinical words drive motor gains. A third clinical keeps drills recognizable
+// while every third word stretches the mouth. Condition presets tune WHICH
+// categories get time; the mix stays constant.
+
+// Condition presets — default 1-5 category weights per diagnosis, set at the
+// "What brings you here?" screen. ps = hidden place-switcher weight.
+// Grounded in dysarthria/apraxia literature (see Clinical Notes in vault):
+// stroke → clusters/fricatives; Parkinson's → final consonants & fricatives
+// (articulatory undershoot); TBI → coordination: clusters + place transitions;
+// dementia (nfvPPA/PPAOS) → length-sensitive, keep weights even, transitions up.
+export const CONDITIONS = [
+  { id: "stroke", name: "Stroke" },
+  { id: "dementia", name: "Dementia / PPA" },
+  { id: "tbi", name: "Traumatic brain injury (TBI)" },
+  { id: "parkinsons", name: "Parkinson's disease" },
+  { id: "other", name: "Other / not sure" },
+];
+export const PRESETS = {
+  stroke:     { th: 4, tri: 5, lb: 3, rb: 3, sb: 4, fc: 4, ps: 4 },
+  dementia:   { th: 3, tri: 3, lb: 3, rb: 3, sb: 3, fc: 3, ps: 4 },
+  tbi:        { th: 3, tri: 5, lb: 4, rb: 4, sb: 4, fc: 4, ps: 5 },
+  parkinsons: { th: 4, tri: 4, lb: 3, rb: 3, sb: 4, fc: 5, ps: 3 },
+  other:      { th: 3, tri: 3, lb: 3, rb: 3, sb: 3, fc: 3, ps: 3 },
+};
 
 export const PAIRS = {
   th: [["thin","fin"],["three","free"],["thick","tick"],["think","sink"],["thought","taught"],["path","pass"],["math","mat"],["both","boat"],["they","day"],["then","den"],["bath","bat"],["mouth","mouse"]],

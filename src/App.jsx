@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { WORDS, PAIRS, SENTENCES, CATS, MILESTONES, GOALS, SCENARIOS } from "./data.js";
+import { WORDS, PAIRS, SENTENCES, CATS, MILESTONES, GOALS, SCENARIOS, CONDITIONS, PRESETS } from "./data.js";
 import { loadState, saveState, dkey } from "./storage.js";
 
 const saved = loadState();
@@ -63,6 +63,8 @@ export default function App() {
   const [ratings, setRatings] = useState(saved?.ratings ?? { th: 3, tri: 3, lb: 3, rb: 3, sb: 3, fc: 3 });
   const [mode, setMode] = useState("words"); // words | pairs | sents | scen
   const [scenario, setScenario] = useState(saved?.scenario ?? null); // selected scenario pack id
+  const [condition, setCondition] = useState(saved?.condition ?? null); // stroke | dementia | tbi | parkinsons | other
+  const [notSure, setNotSure] = useState(false); // assess: "I don't know" → lock to condition preset
   const [paced, setPaced] = useState(saved?.paced ?? false); // false = self-paced (tap Next)
   const [wpm, setWpm] = useState(saved?.wpm ?? 25);
   const [playing, setPlaying] = useState(false);
@@ -126,8 +128,8 @@ export default function App() {
 
   // persist everything that should survive a close (A8 / M-persist)
   useEffect(() => {
-    saveState({ ratings, paced, wpm, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN, scenario, lastRescoreSets, recent: recentRef.current });
-  }, [ratings, paced, wpm, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN, scenario, lastRescoreSets]);
+    saveState({ ratings, paced, wpm, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN, scenario, lastRescoreSets, condition, recent: recentRef.current });
+  }, [ratings, paced, wpm, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN, scenario, lastRescoreSets, condition]);
 
   const bump = (inc, isPair) => {
     setTotalWords((t) => t + inc);
@@ -186,7 +188,8 @@ export default function App() {
         const st = stats[w];
         if (!(st && st.s >= GRAD_X && !(st.h > 0))) remaining++;
       }
-      const wt = (ratings[k] || 3) * Math.max(1, remaining);
+      const base = k === "ps" ? PRESETS[condition || "other"].ps : (ratings[k] || 3); // ps is hidden — weight comes from the condition preset
+      const wt = base * Math.max(1, remaining);
       total += wt;
       return wt;
     });
@@ -423,6 +426,7 @@ export default function App() {
     .segBtn { min-width: 44px; min-height: 44px; border-radius: 12px; border: 1.5px solid ${T.line}; background: ${T.card}; color: ${T.mut}; font-weight: 700; cursor: pointer; font-family: 'Atkinson Hyperlegible'; }
     .segBtn.on { background: ${T.btn}; border-color: ${T.btn}; color: ${T.onBtn}; }
     .stepVal { font-weight: 700; font-size: ${S(16)}; min-width: 40px; text-align: center; }
+    .condBtn { display: block; width: 100%; margin: 10px 0; padding: 16px; min-height: 56px; border-radius: 14px; border: 1.5px solid ${T.line}; background: ${T.card}; font-weight: 700; font-size: ${S(17)}; color: ${T.ink}; cursor: pointer; text-align: left; font-family: 'Atkinson Hyperlegible'; }
     .hintRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .hintTxt { font-size: ${S(15)}; line-height: 1.5; }
     .instSteps { display: flex; flex-direction: column; gap: 14px; margin-top: 6px; }
@@ -500,11 +504,34 @@ export default function App() {
           <p className="sub"><b>Momentum you can see.</b> Daily rings, streaks, and milestone awards make every session count.</p>
           <p className="sub" style={{ marginBottom: 0 }}><i>A practice tool, not medical treatment — keep working with your care team.</i></p>
         </div>
-        <button className="cta" onClick={() => setScreen("assess")}>START</button>
+        <button className="cta" onClick={() => setScreen("condition")}>START</button>
         {returning && (
           <button className="ghost" style={{ display: "block", width: "calc(100% - 32px)", margin: "0 16px 20px" }}
             onClick={() => setScreen("progress")}>Back to my practice</button>
         )}
+        <SizeRow />
+      </div>
+    );
+  }
+
+  if (screen === "condition") {
+    return (
+      <div className="app">
+        <style>{css}</style>
+        <Header right={null} />
+        <div className="card">
+          <h2>What brings you here?</h2>
+          <p className="sub">This tunes which sounds get the most practice time. You can fine-tune on the next screen — and change it any time.</p>
+          {CONDITIONS.map((c) => (
+            <button key={c.id} className="condBtn" onClick={() => {
+              setCondition(c.id);
+              const p = PRESETS[c.id];
+              setRatings({ th: p.th, tri: p.tri, lb: p.lb, rb: p.rb, sb: p.sb, fc: p.fc });
+              setNotSure(false);
+              setScreen("assess");
+            }}>{c.name}</button>
+          ))}
+        </div>
         <SizeRow />
       </div>
     );
@@ -550,14 +577,27 @@ export default function App() {
         <Header right={<span className="hdrBtn" style={{ color: T.mut, cursor: "default", background: "none" }}>SETUP</span>} />
         <div className="card">
           <h2>Rate each sound type</h2>
-          <p className="sub"><b>5 = hardest for you.</b> Higher ratings get more practice time.</p>
+          <p className="sub"><b>5 = hardest for you.</b> Higher ratings get more practice time.{condition ? " We've pre-filled recommended scores for you — adjust any." : ""}</p>
+          <div className="setting" style={{ paddingTop: 0 }}>
+            <span className="setLbl">I don't know — use recommended</span>
+            <button className="switch" onClick={() => {
+              const on = !notSure;
+              setNotSure(on);
+              if (on) {
+                const p = PRESETS[condition || "other"];
+                setRatings({ th: p.th, tri: p.tri, lb: p.lb, rb: p.rb, sb: p.sb, fc: p.fc });
+              }
+            }} aria-pressed={notSure}>
+              <span className={"track" + (notSure ? " on" : "")}><span className="knob" /></span>
+            </button>
+          </div>
           {CATS.map((c) => (
-            <div className="catRow" key={c.id}>
+            <div className="catRow" key={c.id} style={notSure ? { opacity: 0.55 } : null}>
               <div className="catTop"><span className="catName">{c.name}</span><span className="catEx">like {c.ex}</span></div>
               <div className="dots">
                 {[1, 2, 3, 4, 5].map((n) => (
                   <button key={n} className={"dot" + (ratings[c.id] === n ? " on" : "")}
-                    onClick={() => setRatings({ ...ratings, [c.id]: n })}>{n}</button>
+                    onClick={() => { if (!notSure) setRatings({ ...ratings, [c.id]: n }); }}>{n}</button>
                 ))}
               </div>
             </div>
