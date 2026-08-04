@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { WORDS, PAIRS, SENTENCES, CATS, MILESTONES, GOALS, SCENARIOS, CONDITIONS, PRESETS } from "./data.js";
+import { WORDS, PAIRS, SENTENCES, CATS, MILESTONES, GOALS, SCENARIOS, CONDITIONS, PRESETS, SCENARIO_SENTENCES, FUNCTIONAL, VARIANTS, COND_VARIANT, targetsOf, topTarget, cleanToken } from "./data.js";
 import { loadState, saveState, dkey } from "./storage.js";
 
 const saved = loadState();
@@ -18,6 +18,28 @@ const ACTIVE_START = 40; // words per category in the starting deck (most common
 const ACTIVE_MIN = 25;   // when fewer un-graduated words remain, unlock more
 const ACTIVE_STEP = 15;  // how many next-most-common words unlock per refill
 const RECENT_GAP = 200;  // an item can't repeat until this many others have shown (~8 sets of 25)
+
+// Staged practice session (2026-08 restructure): warm-up words → 3×10
+// word→sentence couples → carryover. Only the warm-up varies by variant.
+const COUPLE_SETS = [10, 10, 10];
+const CARRY_N = 4;
+const buildPlan = (variantId) => {
+  const v = VARIANTS.find((x) => x.id === variantId) || VARIANTS[1];
+  return [
+    ...v.warmup.map((n) => ({ stage: "warmup", n })),
+    ...COUPLE_SETS.map((n) => ({ stage: "couples", n })),
+    { stage: "carryover", n: CARRY_N },
+  ];
+};
+// Couples bank for Practice mode: every scenario's sentences plus the
+// category-loaded drill sentences (4+ targets each) — mixed, never chosen by
+// the user. A scenario session filters to its own bank instead.
+const ALL_COUPLE_SENTS = [...Object.values(SCENARIO_SENTENCES).flat(), ...Object.values(SENTENCES).flat()];
+// Scenario carryover prefers its functional sentences — requests and questions
+const functionalish = (sents) => {
+  const f = sents.filter((s) => /\?$/.test(s) || /please/i.test(s) || /^(Could|Can|I'd|I'll|May)\b/.test(s));
+  return f.length >= CARRY_N ? f : sents;
+};
 
 function pickCat(ratings, keys) {
   const pool = [];
@@ -61,9 +83,12 @@ export default function App() {
   const [draft, setDraft] = useState(null); // working copy for the rescore screen
   const [lastRescoreSets, setLastRescoreSets] = useState(saved?.lastRescoreSets ?? 0);
   const [ratings, setRatings] = useState(saved?.ratings ?? { th: 3, tri: 3, lb: 3, rb: 3, sb: 3, fc: 3 });
-  const [mode, setMode] = useState("words"); // words | pairs | sents | scen
+  const [mode, setMode] = useState("practice"); // practice | pairs | scen
   const [scenario, setScenario] = useState(saved?.scenario ?? null); // selected scenario pack id
   const [condition, setCondition] = useState(saved?.condition ?? null); // stroke | dementia | tbi | parkinsons | other
+  const [variant, setVariant] = useState(saved?.variant ?? (saved?.condition ? COND_VARIANT[saved.condition] : "dysarthria")); // warm-up shape
+  const [sess, setSess] = useState(null); // staged session: { plan, idx, count, brk, finished, credits }
+  const sessRef = useRef(null);
   const [notSure, setNotSure] = useState(false); // assess: "I don't know" → lock to condition preset
   const [paced, setPaced] = useState(saved?.paced ?? false); // false = self-paced (tap Next)
   const [wpm, setWpm] = useState(saved?.wpm ?? 25);
@@ -154,8 +179,8 @@ export default function App() {
 
   // persist everything that should survive a close (A8 / M-persist)
   useEffect(() => {
-    saveState({ ratings, paced, wpm, tickOn, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN, scenario, lastRescoreSets, condition, recent: recentRef.current });
-  }, [ratings, paced, wpm, tickOn, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN, scenario, lastRescoreSets, condition]);
+    saveState({ ratings, paced, wpm, tickOn, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN, scenario, lastRescoreSets, condition, variant, recent: recentRef.current });
+  }, [ratings, paced, wpm, tickOn, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN, scenario, lastRescoreSets, condition, variant]);
 
   const bump = (inc, isPair) => {
     setTotalWords((t) => t + inc);
@@ -224,49 +249,126 @@ export default function App() {
     return cats[cats.length - 1];
   };
 
+  const updSess = (patch) => {
+    const s = { ...sessRef.current, ...patch };
+    sessRef.current = s;
+    setSess(s);
+    return s;
+  };
+
+  const pickFromPool = (pool) => { // hard-marked words appear HARD_BOOST× as often
+    const stats = statsRef.current;
+    const p = notRecent(pool);
+    let total = 0;
+    const ws = p.map((w) => { const wt = stats[w]?.h > 0 ? HARD_BOOST : 1; total += wt; return wt; });
+    let r = Math.random() * total;
+    for (let i = 0; i < p.length; i++) { r -= ws[i]; if (r <= 0) return p[i]; }
+    return p[p.length - 1];
+  };
+
   const next = () => {
-    if (doneRef.current >= setSize) return;
-    let nx;
-    if (mode === "words") {
-      const c = pickCatProportional();
-      nx = { cat: c, w: pickWord(c) };
-      recordSeen(nx.w);
-    } else if (mode === "pairs") {
+    if (mode === "pairs") {
+      if (doneRef.current >= setSize) return;
       const c = pickCat({ ...ratings, x: 3 }, Object.keys(PAIRS));
       const list = notRecent(PAIRS[c], (p) => p[0] + "/" + p[1]);
-      nx = { cat: c, pair: list[Math.floor(Math.random() * list.length)] };
-    } else if (mode === "scen") {
-      const sc = SCENARIOS.find((s) => s.id === scenario);
-      if (!sc) return;
-      const stats = statsRef.current;
-      const pool = notRecent(sc.words);
-      let total = 0;
-      const ws = pool.map((w) => { const wt = stats[w]?.h > 0 ? HARD_BOOST : 1; total += wt; return wt; });
-      let r = Math.random() * total;
-      let w = pool[pool.length - 1];
-      for (let i = 0; i < pool.length; i++) { r -= ws[i]; if (r <= 0) { w = pool[i]; break; } }
-      nx = { cat: scenario, w };
-      recordSeen(w);
-    } else {
-      const cur = itemRef.current;
-      if (cur && cur.words && cur.idx < cur.words.length - 1) {
-        nx = { ...cur, idx: cur.idx + 1 };
-      } else {
-        const c = pickCat(ratings, Object.keys(SENTENCES));
-        const list = notRecent(SENTENCES[c]);
-        nx = { cat: c, words: list[Math.floor(Math.random() * list.length)].split(" "), idx: 0 };
-      }
+      const nx = { cat: c, pair: list[Math.floor(Math.random() * list.length)] };
+      markRecent(nx.pair[0] + "/" + nx.pair[1]);
+      itemRef.current = nx;
+      setItem(nx);
+      doneRef.current += 1;
+      setSetItems((p) => [...p, nx.pair[0] + " / " + nx.pair[1]]);
+      bump(2, true); // a pair counts for 2 words
+      return;
     }
-    // remember what just showed so it can't reappear within RECENT_GAP picks
-    if (mode === "pairs") markRecent(nx.pair[0] + "/" + nx.pair[1]);
-    else if (mode === "sents") { if (nx.idx === 0) markRecent(nx.words.join(" ")); }
-    else markRecent(nx.w);
+    // Staged session — Practice and Scenarios share one shape:
+    // warm-up words → 3×10 word→sentence couples → carryover sentences.
+    if (mode === "scen" && !scenario) return;
+    let s = sessRef.current;
+    if (!s) s = updSess({ plan: buildPlan(variant), idx: 0, count: 0, brk: false, finished: false, credits: 0 });
+    if (s.brk || s.finished) return;
+    const entry = s.plan[s.idx];
+    if (s.count >= entry.n) {
+      // stage-set complete — bank a set, then break (or finish after carryover)
+      setHist((h) => {
+        const k = dkey(new Date());
+        const d = h[k] || { w: 0, p: 0, s: 0 };
+        return { ...h, [k]: { ...d, s: d.s + 1 } };
+      });
+      setPlaying(false);
+      updSess(s.idx >= s.plan.length - 1 ? { finished: true } : { brk: true });
+      return;
+    }
+    const cur = itemRef.current;
+    if (cur && cur.kind === "couple" && cur.beat === 1) {
+      // beat 2: the word inside its sentence; credit = the sentence's targets
+      const nx = { ...cur, beat: 2 };
+      itemRef.current = nx;
+      setItem(nx);
+      bump(nx.targets.length, false);
+      updSess({ count: s.count + 1, credits: s.credits + nx.targets.length });
+      return;
+    }
+    if (paced && playing && cur && !cur.held && (cur.kind === "carry" || (cur.kind === "couple" && cur.beat === 2))) {
+      cur.held = true; // sentences get a second tick of reading time on auto-pace
+      return;
+    }
+    let nx;
+    if (entry.stage === "warmup") {
+      const w = mode === "scen"
+        ? pickFromPool(SCENARIOS.find((sc) => sc.id === scenario)?.words || [])
+        : pickWord(pickCatProportional());
+      nx = { kind: "word", w };
+      recordSeen(w);
+      markRecent(w);
+      setSetItems((p) => [...p, w]);
+      bump(1, false);
+      updSess({ count: s.count + 1, credits: s.credits + 1 });
+    } else if (entry.stage === "couples") {
+      const bank = (mode === "scen" && SCENARIO_SENTENCES[scenario]) || ALL_COUPLE_SENTS;
+      const list = notRecent(bank);
+      const sent = list[Math.floor(Math.random() * list.length)];
+      const w = topTarget(sent);
+      nx = { kind: "couple", sentence: sent, targets: targetsOf(sent), w, beat: 1 };
+      recordSeen(w);
+      markRecent(sent);
+      setSetItems((p) => [...p, w]);
+      bump(1, false); // the couple's count advances at beat 2
+      updSess({ credits: s.credits + 1 });
+    } else {
+      const bank = mode === "scen" && SCENARIO_SENTENCES[scenario] ? functionalish(SCENARIO_SENTENCES[scenario]) : FUNCTIONAL;
+      const list = notRecent(bank);
+      const sent = list[Math.floor(Math.random() * list.length)];
+      const targets = targetsOf(sent);
+      nx = { kind: "carry", sentence: sent, targets, w: topTarget(sent) };
+      recordSeen(nx.w);
+      markRecent(sent);
+      setSetItems((p) => [...p, nx.w]);
+      bump(targets.length, false);
+      updSess({ count: s.count + 1, credits: s.credits + targets.length });
+    }
     itemRef.current = nx;
     setItem(nx);
-    const label = mode === "pairs" ? nx.pair[0] + " / " + nx.pair[1] : mode === "sents" ? nx.words[nx.idx] : nx.w;
-    doneRef.current += 1;
-    setSetItems((p) => [...p, label]);
-    bump(mode === "pairs" ? 2 : 1, mode === "pairs"); // a pair counts for 2 words
+  };
+
+  // Break-screen controls: Continue advances, Redo re-runs the same stage-set,
+  // skip jumps forward mid-set. Progress already banked is never lost (§9A).
+  const resumeEntry = (redo) => {
+    const s0 = sessRef.current;
+    if (!s0) return;
+    if (!redo && s0.idx >= s0.plan.length - 1) { updSess({ brk: false, finished: true }); return; }
+    updSess({ brk: false, count: 0, idx: redo ? s0.idx : s0.idx + 1 });
+    itemRef.current = null;
+    setItem(null);
+    next();
+  };
+  const skipStage = () => { setPlaying(false); resumeEntry(false); };
+
+  const stageInfo = (s) => {
+    const e = s.plan[s.idx];
+    const same = s.plan.filter((p) => p.stage === e.stage).length;
+    const pos = s.plan.slice(0, s.idx).filter((p) => p.stage === e.stage).length + 1;
+    const name = e.stage === "warmup" ? "Warm-up" : e.stage === "couples" ? "Sentences" : "Real life";
+    return { name: same > 1 ? `${name} — set ${pos} of ${same}` : name, n: e.n };
   };
 
   useEffect(() => {
@@ -295,9 +397,22 @@ export default function App() {
     return () => document.removeEventListener("visibilitychange", onHide);
   }, []);
 
-  // set completion → award + summary
+  // staged session completion → award + summary (sets were banked per stage)
   useEffect(() => {
-    if (screen === "drill" && setItems.length >= setSize) {
+    if (screen === "drill" && sess?.finished) {
+      setPlaying(false);
+      const prevTotal = totalDone - sess.credits;
+      const ms = MILESTONES.find((m) => prevTotal < m && totalDone >= m);
+      setAward(ms ? { milestone: ms } : { session: true });
+      setDifficult({});
+      marksAppliedRef.current = false;
+      setScreen("summary");
+    }
+  }, [sess, totalDone]);
+
+  // pairs set completion → award + summary
+  useEffect(() => {
+    if (screen === "drill" && mode === "pairs" && setItems.length >= setSize) {
       setPlaying(false);
       const prevTotal = totalDone - setItems.length;
       const ms = MILESTONES.find((m) => prevTotal < m && totalDone >= m);
@@ -343,12 +458,14 @@ export default function App() {
     applyHardMarks();
     doneRef.current = 0;
     itemRef.current = null;
+    sessRef.current = null;
+    setSess(null);
     setSetItems([]);
     setItem(null);
     setAward(null);
     setScreen("drill");
   };
-  const switchMode = (m) => { setPlaying(false); setMode(m); setItem(null); itemRef.current = null; doneRef.current = 0; setSetItems([]); }; // each set is one mode — hard-word review never mixes words with pairs
+  const switchMode = (m) => { setPlaying(false); setMode(m); setItem(null); itemRef.current = null; doneRef.current = 0; setSetItems([]); sessRef.current = null; setSess(null); }; // each set is one mode — hard-word review never mixes words with pairs
   const togglePaced = () => { setPlaying(false); setPaced((p) => !p); };
 
   const css = `
@@ -382,9 +499,8 @@ export default function App() {
     .pairWrap { display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px 20px; align-items: baseline; justify-content: center; }
     .pair2 { font-weight: 700; font-size: calc(clamp(44px, 13vw, 76px) * ${fontScale}); letter-spacing: -0.01em; text-align: center; line-height: 1.05; color: ${T.blue}; }
     .sentWrap { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 12px; max-width: 560px; }
-    .sw { font-weight: 400; font-size: calc(clamp(26px, 7vw, 42px) * ${fontScale}); line-height: 1.2; color: ${T.blue}; padding: 2px 8px; border-radius: 10px; }
-    .sw.done { color: ${T.mut}; }
-    .sw.now { background: ${T.btn}; color: ${T.onBtn}; font-weight: 700; }
+    .sw { font-weight: 400; font-size: calc(clamp(26px, 7vw, 42px) * ${fontScale}); line-height: 1.2; color: ${T.mut}; padding: 2px 8px; border-radius: 10px; }
+    .sw.tgt { color: ${T.blue}; font-weight: 700; background: ${T.chip}; }
     .idle { color: ${T.mut}; font-size: ${S(17)}; text-align: center; max-width: 340px; line-height: 1.5; }
     .controls { padding: 0 16px 26px; }
     .paceRow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; background: ${T.card}; border-radius: 16px; padding: 10px 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(20,25,40,0.10); min-height: 60px; }
@@ -454,6 +570,8 @@ export default function App() {
     .segBtn.on { background: ${T.btn}; border-color: ${T.btn}; color: ${T.onBtn}; }
     .stepVal { font-weight: 700; font-size: ${S(16)}; min-width: 40px; text-align: center; }
     .condBtn { display: block; width: 100%; margin: 10px 0; padding: 16px; min-height: 56px; border-radius: 14px; border: 1.5px solid ${T.line}; background: ${T.card}; font-weight: 700; font-size: ${S(17)}; color: ${T.ink}; cursor: pointer; text-align: left; font-family: 'Atkinson Hyperlegible'; }
+    .condBtn.on { background: ${T.btn}; border-color: ${T.btn}; color: ${T.onBtn}; }
+    .linkBtn { border: none; background: none; color: ${T.blue}; text-decoration: underline; cursor: pointer; font-size: inherit; font-family: inherit; padding: 6px; }
     .hintRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .hintTxt { font-size: ${S(15)}; line-height: 1.5; }
     .instSteps { display: flex; flex-direction: column; gap: 14px; margin-top: 6px; }
@@ -552,6 +670,7 @@ export default function App() {
           {CONDITIONS.map((c) => (
             <button key={c.id} className="condBtn" onClick={() => {
               setCondition(c.id);
+              setVariant(COND_VARIANT[c.id]);
               const p = PRESETS[c.id];
               setRatings({ th: p.th, tri: p.tri, lb: p.lb, rb: p.rb, sb: p.sb, fc: p.fc });
               setNotSure(false);
@@ -649,6 +768,7 @@ export default function App() {
                 ring={award.milestone ? T.blue : T.amber} star={award.milestone ? T.ink : "#fff"} />
               <div className="awardLbl">
                 {award.milestone ? award.milestone.toLocaleString() + " words!"
+                  : award.session ? "Session complete! 💪"
                   : award.setsMilestone ? award.setsMilestone + " sets today! 🎉"
                   : award.n === 1 ? "1 down — nice start!"
                   : award.n + " down today!"}
@@ -656,7 +776,7 @@ export default function App() {
             </div>
           )}
           <div className="bigNum" style={{ marginTop: award ? 12 : 0 }}>{setItems.length}</div>
-          <div className="bigLbl">words this set · {totalDone.toLocaleString()} total</div>
+          <div className="bigLbl">{mode === "pairs" ? "pairs this set" : "items this session"} · {totalDone.toLocaleString()} total words</div>
         </div>
         {feedbackOn && (
           <div className="card">
@@ -677,7 +797,7 @@ export default function App() {
             <button className="cta" style={{ width: "100%", margin: 0 }} onClick={() => { applyHardMarks(); goRescore(); }}>See my hardest sounds</button>
           </div>
         )}
-        <button className="cta" onClick={startNewSet}>Next set</button>
+        <button className="cta" onClick={startNewSet}>{mode === "pairs" ? "Next set" : "New session"}</button>
         <SizeRow />
       </div>
     );
@@ -687,15 +807,23 @@ export default function App() {
     return (
       <div className="app">
         <style>{css}</style>
-        <Header right={<><button className="hdrBtn" onClick={() => { if (setItems.length >= setSize) startNewSet(); else setScreen("drill"); }}>Practice</button><button className="hdrBtn" onClick={() => setScreen("progress")}>Progress</button></>} />
+        <Header right={<><button className="hdrBtn" onClick={() => { if (mode === "pairs" ? setItems.length >= setSize : sessRef.current?.finished) startNewSet(); else setScreen("drill"); }}>Practice</button><button className="hdrBtn" onClick={() => setScreen("progress")}>Progress</button></>} />
         <div className="card">
           <h2>Settings</h2>
+          <div className="setting" style={{ flexDirection: "column", alignItems: "stretch", gap: 4 }}>
+            <span className="setLbl">What's hardest right now?</span>
+            <p className="sub" style={{ margin: "2px 0 4px" }}>Changes how the warm-up is split into sets. The sentence work stays the same.</p>
+            {VARIANTS.map((v) => (
+              <button key={v.id} className={"condBtn" + (variant === v.id ? " on" : "")} style={{ margin: "3px 0" }}
+                onClick={() => setVariant(v.id)}>{v.label}</button>
+            ))}
+          </div>
           <div className="setting">
-            <span className="setLbl">Words per set</span>
+            <span className="setLbl">Pairs per set (Sound pairs)</span>
             <div className="seg">
-              <button className="segBtn" onClick={() => setSetSize((s) => Math.max(25, s - 25))} aria-label="Fewer words per set">−</button>
+              <button className="segBtn" onClick={() => setSetSize((s) => Math.max(25, s - 25))} aria-label="Fewer pairs per set">−</button>
               <span className="stepVal" style={{ alignSelf: "center" }}>{setSize}</span>
-              <button className="segBtn" onClick={() => setSetSize((s) => Math.min(150, s + 25))} aria-label="More words per set">+</button>
+              <button className="segBtn" onClick={() => setSetSize((s) => Math.min(150, s + 25))} aria-label="More pairs per set">+</button>
             </div>
           </div>
           <div className="setting">
@@ -792,7 +920,7 @@ export default function App() {
     return (
       <div className="app">
         <style>{css}</style>
-        <Header right={<><button className="hdrBtn" onClick={() => { if (setItems.length >= setSize) startNewSet(); else setScreen("drill"); }}>Practice</button><button className="hdrBtn" onClick={() => setScreen("settings")}>Settings</button></>} />
+        <Header right={<><button className="hdrBtn" onClick={() => { if (mode === "pairs" ? setItems.length >= setSize : sessRef.current?.finished) startNewSet(); else setScreen("drill"); }}>Practice</button><button className="hdrBtn" onClick={() => setScreen("settings")}>Settings</button></>} />
         {showInstall && (
           <div className="card">
             <h2>Get the app on your phone</h2>
@@ -897,19 +1025,18 @@ export default function App() {
       <style>{css}</style>
       <Header right={<><button className="hdrBtn" onClick={() => { setPlaying(false); setScreen("progress"); }}>Progress</button><button className="hdrBtn" onClick={() => { setPlaying(false); setScreen("settings"); }}>Settings</button></>} />
       <div className="tabs">
-        <button className={"tab" + (mode === "words" ? " on" : "")} onClick={() => switchMode("words")}>Words</button>
+        <button className={"tab" + (mode === "practice" ? " on" : "")} onClick={() => switchMode("practice")}>Practice</button>
         <button className={"tab" + (mode === "pairs" ? " on" : "")} onClick={() => switchMode("pairs")}>Sound pairs</button>
-        <button className={"tab" + (mode === "sents" ? " on" : "")} onClick={() => switchMode("sents")}>Sentences</button>
         <button className={"tab" + (mode === "scen" ? " on" : "")}
           onClick={() => {
-            if (mode === "scen") { setPlaying(false); setScenario(null); setItem(null); itemRef.current = null; } // tap again → back to the chooser
+            if (mode === "scen") { setPlaying(false); setScenario(null); setItem(null); itemRef.current = null; sessRef.current = null; setSess(null); } // tap again → back to the chooser
             else switchMode("scen");
           }}>Scenarios</button>
       </div>
       {mode === "scen" && scenario && (
         <div style={{ textAlign: "center", margin: "6px 16px 0" }}>
           <button className="ghost" style={{ padding: "8px 16px" }}
-            onClick={() => { setPlaying(false); setScenario(null); setItem(null); itemRef.current = null; }}>
+            onClick={() => { setPlaying(false); setScenario(null); setItem(null); itemRef.current = null; sessRef.current = null; setSess(null); }}>
             {SCENARIOS.find((s) => s.id === scenario)?.name} — change
           </button>
         </div>
@@ -925,32 +1052,50 @@ export default function App() {
             </div>
           </div>
         )}
-        {!item && !(mode === "scen" && !scenario) && (
+        {!item && !sess && !(mode === "scen" && !scenario) && (
           <div className="idle">
-            {paced
-              ? "Press Start. Words appear one at a time — say each one out loud before the next arrives."
-              : mode === "sents"
-                ? "Tap Next to begin. Say each highlighted word out loud."
-                : "Tap Next to begin. Say each word out loud, then tap Next when you're ready."}
+            {mode === "pairs"
+              ? (paced
+                ? "Press Start. Pairs appear one at a time — say both words out loud before the next arrives."
+                : "Tap Next to begin. Say both words out loud, then tap Next when you're ready.")
+              : "Tap Next to begin. A short warm-up of single words, then each word inside a sentence you'd really say. Everything out loud."}
           </div>
         )}
-        {item && (mode === "words" || mode === "scen") && <div className="word">{item.w}</div>}
+        {sess?.brk && (
+          <div style={{ textAlign: "center", width: "100%", maxWidth: 420 }}>
+            <div className="awardWrap"><Badge size={72} color={T.blue} ring={T.amber} star="#fff" /></div>
+            <h2 style={{ margin: "12px 0 4px" }}>{stageInfo(sess).name} done!</h2>
+            <p className="idle" style={{ margin: "0 auto 18px" }}>Take a short breather — 20 or 30 seconds is perfect.</p>
+            <button className="cta" style={{ width: "100%", margin: "0 0 10px" }} onClick={() => resumeEntry(false)}>Continue</button>
+            <button className="ghost" style={{ display: "block", width: "100%" }} onClick={() => resumeEntry(true)}>Redo that set</button>
+          </div>
+        )}
+        {item && !sess?.brk && item.kind === "word" && <div className="word">{item.w}</div>}
+        {item && !sess?.brk && item.kind === "couple" && item.beat === 1 && (
+          <>
+            <div className="word">{item.w}</div>
+            <div className="meta" style={{ marginTop: 16 }}>say it — its sentence comes next</div>
+          </>
+        )}
+        {item && !sess?.brk && (item.kind === "carry" || (item.kind === "couple" && item.beat === 2)) && (
+          <div className="sentWrap">
+            {item.sentence.split(" ").map((t, i) => (
+              <span key={i} className={"sw" + (item.targets.includes(cleanToken(t)) ? " tgt" : "")}>{t}</span>
+            ))}
+          </div>
+        )}
         {item && mode === "pairs" && item.pair && (
           <div className="pairWrap">
             <div className="word">{item.pair[0]}</div>
             <div className="pair2">{item.pair[1]}</div>
           </div>
         )}
-        {item && mode === "sents" && item.words && (
-          <div className="sentWrap">
-            {item.words.map((w, i) => (
-              <span key={i} className={"sw" + (i === item.idx ? " now" : i < item.idx ? " done" : "")}>{w}</span>
-            ))}
-          </div>
-        )}
       </div>
-      <div className="setBar"><div className="setFill" style={{ width: Math.min((setItems.length / setSize) * 100, 100) + "%" }} /></div>
-      <div className="controls">
+      <div className="setBar"><div className="setFill" style={{
+        width: (mode === "pairs"
+          ? Math.min((setItems.length / setSize) * 100, 100)
+          : sess ? Math.min((sess.count / sess.plan[sess.idx].n) * 100, 100) : 0) + "%" }} /></div>
+      <div className="controls" style={sess?.brk ? { visibility: "hidden" } : null}>
         <div className="paceRow">
           <button className="switch" onClick={togglePaced} aria-pressed={paced}>
             <span className={"track" + (paced ? " on" : "")}><span className="knob" /></span>
@@ -983,7 +1128,13 @@ export default function App() {
             </button>
           )}
         </div>
-        <div className="meta">{setItems.length} of {setSize} this set · {todayWords} today</div>
+        <div className="meta">
+          {mode === "pairs"
+            ? `${setItems.length} of ${setSize} this set · ${todayWords} today`
+            : sess && !sess.finished
+              ? <>{stageInfo(sess).name} · {Math.min(sess.count, sess.plan[sess.idx].n)} of {sess.plan[sess.idx].n} · {todayWords} today · <button className="linkBtn" onClick={skipStage}>skip ahead</button></>
+              : `Warm-up, then sentences · ${todayWords} today`}
+        </div>
       </div>
       <SizeRow />
     </div>
