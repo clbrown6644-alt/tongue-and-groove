@@ -1,0 +1,15 @@
+# deps & build
+node_modules/
+dist/
+dev-dist/
+
+# local tooling
+.claude/
+.DS_Store
+
+# planning docs & prototype reference — kept local, not for the public repo
+# (canonical docs live in the Obsidian vault)
+tongue-and-groove.md
+claude-design-prompt.md
+tongue-and-groove-PRD.md.zip
+TG-prototype.jsx
