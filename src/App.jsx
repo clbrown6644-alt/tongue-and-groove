@@ -67,6 +67,7 @@ export default function App() {
   const [notSure, setNotSure] = useState(false); // assess: "I don't know" → lock to condition preset
   const [paced, setPaced] = useState(saved?.paced ?? false); // false = self-paced (tap Next)
   const [wpm, setWpm] = useState(saved?.wpm ?? 25);
+  const [tickOn, setTickOn] = useState(saved?.tickOn ?? false); // metronome tick on each auto-paced word
   const [playing, setPlaying] = useState(false);
   const [item, setItem] = useState(null);
   const [setSize, setSetSize] = useState(saved?.setSize ?? 25); // 25–150 in blocks of 25
@@ -113,6 +114,31 @@ export default function App() {
   const chartScrollRef = useRef(null);
   const totalDone = totalWords;
 
+  // Pacing tick — a short metronome click on each auto-paced word (rate-control
+  // cue, standard in dysarthria therapy). AudioContext must be created/resumed
+  // inside a tap handler for iOS, so ensureAudio runs on Start and on the toggle.
+  const audioRef = useRef(null);
+  const ensureAudio = () => {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!audioRef.current) audioRef.current = new Ctx();
+    if (audioRef.current.state === "suspended") audioRef.current.resume();
+  };
+  const playTick = () => {
+    const ctx = audioRef.current;
+    if (!ctx || ctx.state !== "running") return;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "square";
+    o.frequency.value = 1000;
+    g.gain.setValueAtTime(0.15, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+    o.connect(g).connect(ctx.destination);
+    o.start(t);
+    o.stop(t + 0.06);
+  };
+
   const todayKey = dkey(new Date());
   const totalSetsAll = Object.values(hist).reduce((a, d) => a + (d.s || 0), 0);
   const rescoreDue = totalSetsAll - lastRescoreSets >= 20;
@@ -128,8 +154,8 @@ export default function App() {
 
   // persist everything that should survive a close (A8 / M-persist)
   useEffect(() => {
-    saveState({ ratings, paced, wpm, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN, scenario, lastRescoreSets, condition, recent: recentRef.current });
-  }, [ratings, paced, wpm, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN, scenario, lastRescoreSets, condition]);
+    saveState({ ratings, paced, wpm, tickOn, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN, scenario, lastRescoreSets, condition, recent: recentRef.current });
+  }, [ratings, paced, wpm, tickOn, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN, scenario, lastRescoreSets, condition]);
 
   const bump = (inc, isPair) => {
     setTotalWords((t) => t + inc);
@@ -245,11 +271,12 @@ export default function App() {
 
   useEffect(() => {
     if (playing && paced) {
-      next();
-      timerRef.current = setInterval(next, (60 / wpm) * 1000);
+      const step = () => { next(); if (tickOn) playTick(); };
+      step();
+      timerRef.current = setInterval(step, (60 / wpm) * 1000);
     }
     return () => clearInterval(timerRef.current);
-  }, [playing, wpm, mode, ratings, paced]);
+  }, [playing, wpm, mode, ratings, paced, tickOn]);
 
   // M1 — keep the screen awake during a paced drill; release on pause/unmount
   useEffect(() => {
@@ -360,7 +387,7 @@ export default function App() {
     .sw.now { background: ${T.btn}; color: ${T.onBtn}; font-weight: 700; }
     .idle { color: ${T.mut}; font-size: ${S(17)}; text-align: center; max-width: 340px; line-height: 1.5; }
     .controls { padding: 0 16px 26px; }
-    .paceRow { display: flex; align-items: center; gap: 12px; background: ${T.card}; border-radius: 16px; padding: 10px 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(20,25,40,0.10); min-height: 60px; }
+    .paceRow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; background: ${T.card}; border-radius: 16px; padding: 10px 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(20,25,40,0.10); min-height: 60px; }
     .paceVal { font-weight: 700; font-size: 15px; min-width: 44px; text-align: right; }
     input[type=range] { flex: 1; accent-color: ${T.blue}; height: 28px; }
     .switch { display: flex; align-items: center; gap: 10px; border: none; background: none; cursor: pointer; padding: 8px 0; min-height: 44px; font-family: 'Atkinson Hyperlegible'; }
@@ -934,13 +961,18 @@ export default function App() {
               <input type="range" min="10" max="150" step="5" value={wpm}
                 onChange={(e) => setWpm(parseInt(e.target.value))} />
               <span className="paceVal">{wpm} wpm</span>
+              <button className="switch" onClick={() => { ensureAudio(); setTickOn((t) => !t); }}
+                aria-pressed={tickOn} aria-label="Pacing tick sound">
+                <span className={"track" + (tickOn ? " on" : "")}><span className="knob" /></span>
+                <span className="swLbl">Tick</span>
+              </button>
             </>
           )}
         </div>
         <div className="btnRow">
           {paced ? (
             <>
-              <button className={"play" + (playing ? " stop" : "")} onClick={() => { if (mode === "scen" && !scenario) return; setPlaying(!playing); }}>
+              <button className={"play" + (playing ? " stop" : "")} onClick={() => { if (mode === "scen" && !scenario) return; if (tickOn) ensureAudio(); setPlaying(!playing); }}>
                 {playing ? "Pause" : "Start"}
               </button>
               <button className="ghost" onClick={next}>Next</button>
