@@ -288,6 +288,13 @@ export default function App() {
     .stepVal { font-weight: 700; font-size: ${S(16)}; min-width: 40px; text-align: center; }
     .hintRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .hintTxt { font-size: ${S(15)}; line-height: 1.5; }
+    @media (max-width: 640px) {
+      .tiles { flex-direction: column; }
+      .ringsRow { gap: 22px; justify-content: center; }
+      .ringsSvg { width: 62%; max-width: 320px; }
+      .bigLegVal { font-size: ${S(40)}; }
+      .tile { padding: 20px; }
+    }
     @media (prefers-reduced-motion: reduce) { .knob, .setFill { transition: none; } .awardWrap, .awardFade { animation: none; } }
   `;
 
