@@ -577,7 +577,7 @@ export default function App() {
             <h2>Get the app on your phone</h2>
             <p className="sub" style={{ marginBottom: 10 }}>
               {isIOS
-                ? "Open this page in Safari — on iPhone only Safari can install it as a real app. Then:"
+                ? <><b style={{ color: T.ink }}>On iPhone it will ONLY install from Safari</b> — Chrome or a link inside Messages/Mail makes just a bookmark. Open this page in Safari, then:</>
                 : "Open this page in Chrome, then:"}
             </p>
             <div className="instSteps">

@@ -2,8 +2,8 @@
 
 A speech practice web app for adults with motor speech disorders (dysarthria, apraxia of speech) — paced word drills weighted toward the sound categories the user finds hardest.
 
-**Live app:** https://clbrown6644-alt.github.io/tongue-and-groove/
-Installable as a PWA (iPhone: Safari → Share → Add to Home Screen; Android: Chrome → Install). Works fully offline after first load. Not a medical device; a practice tool, not therapy.
+**Live app:** https://tonguegroove-app.github.io/tongue-and-groove/
+Installable as a PWA (iPhone: **Safari only** → Share → Add to Home Screen; Android: Chrome → Install). Works fully offline after first load. Not a medical device; a practice tool, not therapy.
 
 ## Features
 
