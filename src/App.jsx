@@ -17,7 +17,7 @@ const REVIEW_P = 0.1;    // share of picks that revisit graduated words so they 
 const ACTIVE_START = 40; // words per category in the starting deck (most common first)
 const ACTIVE_MIN = 25;   // when fewer un-graduated words remain, unlock more
 const ACTIVE_STEP = 15;  // how many next-most-common words unlock per refill
-const RECENT_GAP = 25;   // an item can't repeat until this many others have shown
+const RECENT_GAP = 200;  // an item can't repeat until this many others have shown (~8 sets of 25)
 
 function pickCat(ratings, keys) {
   const pool = [];
@@ -87,13 +87,20 @@ export default function App() {
   const doneRef = useRef(0);
   const wakeRef = useRef(null);
   const marksAppliedRef = useRef(true); // false only while a fresh summary awaits its hard-word taps
-  const recentRef = useRef([]); // last RECENT_GAP item keys, to space out repeats
+  const recentRef = useRef(saved?.recent ?? []); // last RECENT_GAP item keys, to space out repeats
 
-  // drop items shown within the last RECENT_GAP picks; relax if that empties the pool
+  // Drop items shown within the last RECENT_GAP picks. If that empties the pool
+  // (pool smaller than the gap — pairs, scenario packs), fall back to the
+  // least-recently-shown third instead of allowing a fresh repeat, so small
+  // pools cycle fully before anything comes back.
   const notRecent = (arr, key = (x) => x) => {
-    const r = new Set(recentRef.current);
-    const f = arr.filter((x) => !r.has(key(x)));
-    return f.length ? f : arr;
+    const rec = recentRef.current;
+    const idx = new Map();
+    rec.forEach((k, i) => idx.set(k, i)); // higher index = more recent
+    const fresh = arr.filter((x) => !idx.has(key(x)));
+    if (fresh.length) return fresh;
+    const sorted = [...arr].sort((a, b) => (idx.get(key(a)) ?? -1) - (idx.get(key(b)) ?? -1));
+    return sorted.slice(0, Math.max(1, Math.ceil(sorted.length / 3)));
   };
   const markRecent = (key) => {
     recentRef.current.push(key);
@@ -115,7 +122,7 @@ export default function App() {
 
   // persist everything that should survive a close (A8 / M-persist)
   useEffect(() => {
-    saveState({ ratings, paced, wpm, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN, scenario });
+    saveState({ ratings, paced, wpm, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN, scenario, recent: recentRef.current });
   }, [ratings, paced, wpm, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN, scenario]);
 
   const bump = (inc, isPair) => {
