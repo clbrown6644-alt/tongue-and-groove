@@ -5,6 +5,22 @@ import { loadState, saveState, dkey } from "./storage.js";
 
 const saved = loadState();
 
+// End-of-session difficulty check-in — asked after the first session, then at
+// most once every DIFF_ASK_GAP banked sets (a nudge, never a nag).
+const DIFF_ASK_GAP = 6;
+const DIFF_LEVELS = [
+  { id: "easy", label: "Easy" },
+  { id: "medium", label: "Medium" },
+  { id: "hard", label: "Hard" },
+  { id: "toohard", label: "Too hard" },
+];
+const DIFF_ACK = {
+  easy: "Good to know — the drills will keep the challenge coming.",
+  medium: "Right in the zone. That's where progress lives.",
+  hard: "Hard is where the gains are. Mark the toughest words above and they'll come back until you beat them.",
+  toohard: "Thanks for the honesty. A slower pace or a shorter session is the right move — no medals for grinding.",
+};
+
 const isIOS = typeof navigator !== "undefined" && /iP(hone|ad|od)/.test(navigator.userAgent);
 const isStandalone =
   typeof window !== "undefined" &&
@@ -125,6 +141,9 @@ export default function App() {
   const [feedbackOn, setFeedbackOn] = useState(saved?.feedbackOn ?? true);
   const [iosHintDismissed, setIosHintDismissed] = useState(saved?.iosHintDismissed ?? false);
   const [wordStats, setWordStats] = useState(saved?.wordStats ?? {}); // { word: { s: seen count, h: hard level } }
+  const [diffChecks, setDiffChecks] = useState(saved?.diffChecks ?? []); // difficulty check-ins: [{ d, v, sets }]
+  const [lastDiffAsk, setLastDiffAsk] = useState(saved?.lastDiffAsk ?? 0); // totalSetsAll when last asked
+  const [diffAnswered, setDiffAnswered] = useState(null); // this summary's answer (not persisted)
   const statsRef = useRef(wordStats);
   useEffect(() => { statsRef.current = wordStats; }, [wordStats]);
   const timerRef = useRef(null);
@@ -201,8 +220,8 @@ export default function App() {
 
   // persist everything that should survive a close (A8 / M-persist)
   useEffect(() => {
-    saveState({ ratings, paced, wpm, tickOn, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, scenario, lastRescoreSets, condition, variant, useRec, manualRatings, recent: recentRef.current });
-  }, [ratings, paced, wpm, tickOn, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, scenario, lastRescoreSets, condition, variant, useRec, manualRatings]);
+    saveState({ ratings, paced, wpm, tickOn, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, scenario, lastRescoreSets, condition, variant, useRec, manualRatings, diffChecks, lastDiffAsk, recent: recentRef.current });
+  }, [ratings, paced, wpm, tickOn, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, scenario, lastRescoreSets, condition, variant, useRec, manualRatings, diffChecks, lastDiffAsk]);
 
   const bump = (inc, isPair) => {
     setTotalWords((t) => t + inc);
@@ -512,9 +531,15 @@ export default function App() {
     setSetItems([]);
     setItem(null);
     setAward(null);
+    setDiffAnswered(null);
     setScreen("drill");
   };
   const switchMode = (m) => { setPlaying(false); setMode(m); setItem(null); itemRef.current = null; doneRef.current = 0; setSetItems([]); sessRef.current = null; setSess(null); }; // each set is one mode — hard-word review never mixes words with pairs
+  const answerDiff = (v) => {
+    setDiffChecks((c) => [...c, { d: dkey(new Date()), v, sets: totalSetsAll }]);
+    setLastDiffAsk(totalSetsAll);
+    setDiffAnswered(v);
+  };
   const togglePaced = () => { setPlaying(false); setPaced((p) => !p); };
 
   const css = `
@@ -842,6 +867,28 @@ export default function App() {
                   onClick={() => setDifficult((d) => ({ ...d, [i]: !d[i] }))}>{w}</button>
               ))}
             </div>
+          </div>
+        )}
+        {(diffAnswered || diffChecks.length === 0 || totalSetsAll - lastDiffAsk >= DIFF_ASK_GAP) && (
+          <div className="card">
+            <h2>How hard was that?</h2>
+            {diffAnswered ? (
+              <>
+                <p className="sub" style={{ marginBottom: 0 }}>{DIFF_ACK[diffAnswered]}</p>
+                {diffAnswered === "toohard" && paced && (
+                  <button className="condBtn" style={{ marginTop: 10 }}
+                    onClick={() => setWpm((w) => Math.max(10, w - 5))}>Slow the pace to {Math.max(10, wpm - 5)} WPM</button>
+                )}
+              </>
+            ) : (
+              <>
+                <p className="sub">A quick check-in — your honest read helps you tune the practice.</p>
+                {DIFF_LEVELS.map((l) => (
+                  <button key={l.id} className="condBtn" style={{ margin: "3px 0" }}
+                    onClick={() => answerDiff(l.id)}>{l.label}</button>
+                ))}
+              </>
+            )}
           </div>
         )}
         {rescoreDue && (
