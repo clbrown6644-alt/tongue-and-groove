@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { WORDS, PAIRS, SENTENCES, CATS, MILESTONES, GOALS, SCENARIOS, CONDITIONS, PRESETS, SCENARIO_SENTENCES, FUNCTIONAL, VARIANTS, COND_VARIANT, targetsOf, topTarget, cleanToken } from "./data.js";
+import { WORDS, WORD_META, PAIRS, SENTENCES, CATS, MILESTONES, GOALS, SCENARIOS, CONDITIONS, PRESETS, SCENARIO_SENTENCES, VARIANTS, COND_VARIANT, targetsOf, topTarget, cleanToken } from "./data.js";
+import { SENT_META } from "./sentences.gen.js";
 import { loadState, saveState, dkey } from "./storage.js";
 
 const saved = loadState();
@@ -11,35 +12,51 @@ const isStandalone =
 const isAndroid = typeof navigator !== "undefined" && /Android/.test(navigator.userAgent);
 
 // adaptive word selection tuning
-const GRAD_X = 5;        // clean exposures before a word graduates to the review pool
 const HARD_BOOST = 3;    // hard-marked words appear 3× as often as normal words
-const REVIEW_P = 0.1;    // share of picks that revisit graduated words so they aren't forgotten
-const ACTIVE_START = 40; // words per category in the starting deck (most common first)
-const ACTIVE_MIN = 25;   // when fewer un-graduated words remain, unlock more
-const ACTIVE_STEP = 15;  // how many next-most-common words unlock per refill
 const RECENT_GAP = 200;  // an item can't repeat until this many others have shown (~8 sets of 25)
 
-// Staged practice session (2026-08 restructure): warm-up words → 3×10
-// word→sentence couples → carryover. Only the warm-up varies by variant.
+// Staged practice session: warm-up words → 3×10 word→sentence couples that
+// escalate 1 → 2 → 3+ instances of the target sound (§6 ladder) → optional
+// Bonus Round of 6 scenario sentences. Only the warm-up varies by variant.
 const COUPLE_SETS = [10, 10, 10];
-const CARRY_N = 4;
+const BONUS_N = 6;
 const buildPlan = (variantId) => {
   const v = VARIANTS.find((x) => x.id === variantId) || VARIANTS[1];
   return [
     ...v.warmup.map((n) => ({ stage: "warmup", n })),
     ...COUPLE_SETS.map((n) => ({ stage: "couples", n })),
-    { stage: "carryover", n: CARRY_N },
+    { stage: "bonus", n: BONUS_N },
   ];
 };
 // Couples bank for Practice mode: every scenario's sentences plus the
-// category-loaded drill sentences (4+ targets each) — mixed, never chosen by
-// the user. A scenario session filters to its own bank instead.
+// category-loaded drill sentences — mixed, never chosen by the user. A
+// scenario session filters to its own bank instead.
 const ALL_COUPLE_SENTS = [...Object.values(SCENARIO_SENTENCES).flat(), ...Object.values(SENTENCES).flat()];
-// Scenario carryover prefers its functional sentences — requests and questions
-const functionalish = (sents) => {
-  const f = sents.filter((s) => /\?$/.test(s) || /please/i.test(s) || /^(Could|Can|I'd|I'll|May)\b/.test(s));
-  return f.length >= CARRY_N ? f : sents;
+
+// §6 ladder rung of a sentence: 1 / 2 / 3 = instances of its target sound
+// (from the build-time tags); 0 = no target sound, unusable as a couple.
+const rungOf = (s) => { const m = SENT_META[s]; return !m || !m.cat || m.n === 0 ? 0 : Math.min(m.n, 3); };
+
+// §2: a scenario is session-ready when every ladder rung can fill a 10-couple
+// set. Thinner scenarios stay listed with an "In progress" badge.
+const SCEN_READY = Object.fromEntries(SCENARIOS.map((sc) => {
+  const b = { 1: 0, 2: 0, 3: 0 };
+  (SCENARIO_SENTENCES[sc.id] || []).forEach((x) => { const r = rungOf(x); if (r) b[r]++; });
+  return [sc.id, b[1] >= 10 && b[2] >= 10 && b[3] >= 10];
+}));
+
+// §1E warm-up tier spread — 20 / 30 / 30 / 20 across difficulty tiers 2-5,
+// so every session mixes words the user can win and words that stretch.
+const tierCounts = (total) => {
+  const c = { 2: Math.round(total * 0.2), 3: Math.round(total * 0.3), 4: Math.round(total * 0.3) };
+  c[5] = total - c[2] - c[3] - c[4];
+  return c;
 };
+const WORDS_BY_TIER_CAT = {}; // tier -> cat -> [words]
+Object.keys(WORDS).forEach((c) => WORDS[c].forEach((w) => {
+  const t = WORD_META[w]?.t;
+  if (t) ((WORDS_BY_TIER_CAT[t] ??= {})[c] ??= []).push(w);
+}));
 
 function pickCat(ratings, keys) {
   const pool = [];
@@ -87,9 +104,10 @@ export default function App() {
   const [scenario, setScenario] = useState(saved?.scenario ?? null); // selected scenario pack id
   const [condition, setCondition] = useState(saved?.condition ?? null); // stroke | dementia | tbi | parkinsons | other
   const [variant, setVariant] = useState(saved?.variant ?? (saved?.condition ? COND_VARIANT[saved.condition] : "dysarthria")); // warm-up shape
-  const [sess, setSess] = useState(null); // staged session: { plan, idx, count, brk, finished, credits }
+  const [sess, setSess] = useState(null); // staged session: { plan, idx, count, brk, finished, credits, wq, wqi, sents, bonusQ }
   const sessRef = useRef(null);
-  const [notSure, setNotSure] = useState(false); // assess: "I don't know" → lock to condition preset
+  const [useRec, setUseRec] = useState(saved?.useRec ?? true); // §8: recommended settings, ON by default
+  const [manualRatings, setManualRatings] = useState(saved?.manualRatings ?? null); // kept across toggle flips
   const [paced, setPaced] = useState(saved?.paced ?? false); // false = self-paced (tap Next)
   const [wpm, setWpm] = useState(saved?.wpm ?? 25);
   const [tickOn, setTickOn] = useState(saved?.tickOn ?? false); // metronome tick on each auto-paced word
@@ -107,11 +125,8 @@ export default function App() {
   const [feedbackOn, setFeedbackOn] = useState(saved?.feedbackOn ?? true);
   const [iosHintDismissed, setIosHintDismissed] = useState(saved?.iosHintDismissed ?? false);
   const [wordStats, setWordStats] = useState(saved?.wordStats ?? {}); // { word: { s: seen count, h: hard level } }
-  const [activeN, setActiveN] = useState(saved?.activeN ?? {});       // words unlocked so far per category
   const statsRef = useRef(wordStats);
-  const activeRef = useRef(activeN);
   useEffect(() => { statsRef.current = wordStats; }, [wordStats]);
-  useEffect(() => { activeRef.current = activeN; }, [activeN]);
   const timerRef = useRef(null);
   const itemRef = useRef(null);
   const doneRef = useRef(0);
@@ -186,8 +201,8 @@ export default function App() {
 
   // persist everything that should survive a close (A8 / M-persist)
   useEffect(() => {
-    saveState({ ratings, paced, wpm, tickOn, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN, scenario, lastRescoreSets, condition, variant, recent: recentRef.current });
-  }, [ratings, paced, wpm, tickOn, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, activeN, scenario, lastRescoreSets, condition, variant]);
+    saveState({ ratings, paced, wpm, tickOn, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, scenario, lastRescoreSets, condition, variant, useRec, manualRatings, recent: recentRef.current });
+  }, [ratings, paced, wpm, tickOn, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, scenario, lastRescoreSets, condition, variant, useRec, manualRatings]);
 
   const bump = (inc, isPair) => {
     setTotalWords((t) => t + inc);
@@ -198,62 +213,40 @@ export default function App() {
     });
   };
 
-  // Adaptive pick: weighted among the "active" deck (most common words first).
-  // Hard-marked words appear HARD_BOOST× as often; words seen GRAD_X times with
-  // no hard mark graduate to a review pool (REVIEW_P of picks); when the live
-  // deck runs low, the next most common words unlock.
-  const pickWord = (cat) => {
-    const list = WORDS[cat];
-    const stats = statsRef.current;
-    let aN = Math.min(activeRef.current[cat] ?? ACTIVE_START, list.length);
-    const grads = [], live = [];
-    for (let i = 0; i < aN; i++) {
-      const w = list[i], st = stats[w];
-      if (st && st.s >= GRAD_X && !(st.h > 0)) grads.push(w); else live.push(w);
-    }
-    if (live.length < ACTIVE_MIN && aN < list.length) {
-      const nA = Math.min(aN + ACTIVE_STEP, list.length);
-      for (let i = aN; i < nA; i++) live.push(list[i]);
-      activeRef.current = { ...activeRef.current, [cat]: nA };
-      setActiveN(activeRef.current);
-    }
-    const gradsF = notRecent(grads);
-    const liveF = notRecent(live);
-    if (grads.length && (Math.random() < REVIEW_P || !live.length))
-      return gradsF[Math.floor(Math.random() * gradsF.length)];
-    let total = 0;
-    const weights = liveF.map((w) => { const wt = stats[w]?.h > 0 ? HARD_BOOST : 1; total += wt; return wt; });
-    let r = Math.random() * total;
-    for (let i = 0; i < liveF.length; i++) { r -= weights[i]; if (r <= 0) return liveF[i]; }
-    return liveF[liveF.length - 1];
-  };
-
   const recordSeen = (w) => {
     setWordStats((s) => ({ ...s, [w]: { s: (s[w]?.s || 0) + 1, h: s[w]?.h || 0 } }));
   };
 
-  // Words mode picks the category by rating × words-remaining, so big categories
-  // (final clusters: 592 words) get proportionally more airtime than small ones
-  // (3-consonant clusters: 41) and every category finishes around the same time.
-  // Ratings still tilt it: a 5-rated category gets 5× the time per remaining word.
-  const pickCatProportional = () => {
+  // §1E warm-up queue: two separate dials. Difficulty is SPREAD across tiers
+  // (6/9/9/6 per 30); category is WEIGHTED by the assessment ratings within
+  // each tier band (a 5-rated category ~5× a 1-rated one). Hard-marked words
+  // keep their HARD_BOOST inside each slot; the queue shuffles so every
+  // warm-up set mixes easy wins with genuine challenge.
+  const buildWarmupQueue = (total) => {
+    const counts = tierCounts(total);
     const stats = statsRef.current;
-    const cats = Object.keys(WORDS);
-    let total = 0;
-    const weights = cats.map((k) => {
-      let remaining = 0;
-      for (const w of WORDS[k]) {
-        const st = stats[w];
-        if (!(st && st.s >= GRAD_X && !(st.h > 0))) remaining++;
+    const used = new Set();
+    const pickFrom = (tier) => {
+      for (let t = tier; t >= 2; t--) { // thin tiers borrow from the one below
+        const avail = Object.keys(WORDS_BY_TIER_CAT[t] || {}).filter((c) => WORDS_BY_TIER_CAT[t][c].some((w) => !used.has(w)));
+        if (!avail.length) continue;
+        const cat = pickCat(ratings, avail);
+        const cand = notRecent(WORDS_BY_TIER_CAT[t][cat].filter((w) => !used.has(w)));
+        let tw = 0;
+        const ws = cand.map((w) => { const wt = stats[w]?.h > 0 ? HARD_BOOST : 1; tw += wt; return wt; });
+        let r = Math.random() * tw;
+        for (let i = 0; i < cand.length; i++) { r -= ws[i]; if (r <= 0) return cand[i]; }
+        return cand[cand.length - 1];
       }
-      const base = k === "ps" ? PRESETS[condition || "other"].ps : (ratings[k] || 3); // ps is hidden — weight comes from the condition preset
-      const wt = base * Math.max(1, remaining);
-      total += wt;
-      return wt;
-    });
-    let r = Math.random() * total;
-    for (let i = 0; i < cats.length; i++) { r -= weights[i]; if (r <= 0) return cats[i]; }
-    return cats[cats.length - 1];
+      return null;
+    };
+    const queue = [];
+    for (const t of [2, 3, 4, 5]) for (let i = 0; i < counts[t]; i++) {
+      const w = pickFrom(t);
+      if (w) { queue.push(w); used.add(w); }
+    }
+    for (let i = queue.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [queue[i], queue[j]] = [queue[j], queue[i]]; }
+    return queue;
   };
 
   const updSess = (patch) => {
@@ -273,6 +266,33 @@ export default function App() {
     return p[p.length - 1];
   };
 
+  // §10 Bonus Round queue: 6 scenario sentences, one per scenario, no repeats
+  // of anything shown earlier this session. Prefers sentences carrying a word
+  // practiced this session, but one-per-scenario coverage wins. Short scenarios
+  // are topped up from Doctor visit and Restaurant.
+  const buildBonusQueue = (s) => {
+    const sessWords = new Set(setItems.map((x) => cleanToken(x)).filter(Boolean));
+    const shown = new Set(s.sents || []);
+    const picks = [];
+    const taken = (x) => shown.has(x) || picks.some((p) => p.sentence === x);
+    const sessWordIn = (sent) => sent.split(/\s+/).map(cleanToken).find((t) => t && sessWords.has(t)) || null;
+    for (const sc of SCENARIOS) {
+      const bank = (SCENARIO_SENTENCES[sc.id] || []).filter((x) => !taken(x));
+      if (!bank.length) continue;
+      const pref = bank.filter(sessWordIn);
+      const pool = pref.length ? pref : bank;
+      const sent = pool[Math.floor(Math.random() * pool.length)];
+      picks.push({ sentence: sent, w: sessWordIn(sent) });
+    }
+    while (picks.length < BONUS_N) {
+      const fill = [...(SCENARIO_SENTENCES.dr || []), ...(SCENARIO_SENTENCES.rest || [])].filter((x) => !taken(x));
+      if (!fill.length) break;
+      const sent = fill[Math.floor(Math.random() * fill.length)];
+      picks.push({ sentence: sent, w: sessWordIn(sent) });
+    }
+    return picks;
+  };
+
   const next = () => {
     if (mode === "pairs") {
       if (doneRef.current >= setSize) return;
@@ -287,15 +307,19 @@ export default function App() {
       bump(2, true); // a pair counts for 2 words
       return;
     }
-    // Staged session — Practice and Scenarios share one shape:
-    // warm-up words → 3×10 word→sentence couples → carryover sentences.
+    // Staged session — Practice and Scenarios share one shape: warm-up words →
+    // 3×10 couples escalating 1 → 2 → 3+ target-sound instances → Bonus Round.
     if (mode === "scen" && !scenario) return;
     let s = sessRef.current;
-    if (!s) s = updSess({ plan: buildPlan(variant), idx: 0, count: 0, brk: false, finished: false, credits: 0 });
+    if (!s) {
+      const totalWarm = (VARIANTS.find((x) => x.id === variant) || VARIANTS[1]).warmup.reduce((a, b) => a + b, 0);
+      s = updSess({ plan: buildPlan(variant), idx: 0, count: 0, brk: false, finished: false, credits: 0,
+        wq: mode === "scen" ? null : buildWarmupQueue(totalWarm), wqi: 0, sents: [] });
+    }
     if (s.brk || s.finished) return;
     const entry = s.plan[s.idx];
     if (s.count >= entry.n) {
-      // stage-set complete — bank a set, then break (or finish after carryover)
+      // stage-set complete — bank a set, then break (or finish after the bonus)
       setHist((h) => {
         const k = dkey(new Date());
         const d = h[k] || { w: 0, p: 0, s: 0 };
@@ -317,9 +341,12 @@ export default function App() {
     }
     let nx;
     if (entry.stage === "warmup") {
-      const w = mode === "scen"
-        ? pickFromPool(SCENARIOS.find((sc) => sc.id === scenario)?.words || [])
-        : pickWord(pickCatProportional());
+      let w;
+      if (mode === "scen") w = pickFromPool(SCENARIOS.find((sc) => sc.id === scenario)?.words || []);
+      else {
+        w = s.wq && s.wqi < s.wq.length ? s.wq[s.wqi] : pickFromPool(Object.values(WORDS).flat());
+        s = updSess({ wqi: s.wqi + 1 });
+      }
       nx = { kind: "word", w };
       recordSeen(w);
       markRecent(w);
@@ -327,25 +354,33 @@ export default function App() {
       bump(1, false);
       updSess({ count: s.count + 1, credits: s.credits + 1 });
     } else if (entry.stage === "couples") {
+      // §6 ladder: couples set 1 uses 1-instance sentences, set 2 exactly 2,
+      // set 3 uses 3+. Thin banks fall back to the nearest rung (audit-flagged).
+      const pos = s.plan.slice(0, s.idx).filter((p) => p.stage === "couples").length + 1;
       const bank = (mode === "scen" && SCENARIO_SENTENCES[scenario]) || ALL_COUPLE_SENTS;
-      const list = notRecent(bank);
+      const order = pos === 1 ? [1, 2, 3] : pos === 2 ? [2, 1, 3] : [3, 2, 1];
+      let cand = [];
+      for (const r of order) { cand = bank.filter((x) => rungOf(x) === r); if (cand.length) break; }
+      if (!cand.length) cand = bank;
+      const list = notRecent(cand);
       const sent = list[Math.floor(Math.random() * list.length)];
-      const w = topTarget(sent);
+      const w = SENT_META[sent]?.w || topTarget(sent);
       nx = { kind: "couple", sentence: sent, targets: targetsOf(sent), w, beat: 1, hint: !s.hinted };
       recordSeen(w);
       markRecent(sent);
       setSetItems((p) => [...p, w]);
       bump(1, false); // the couple's count advances at beat 2
-      updSess({ credits: s.credits + 1, hinted: true });
+      updSess({ credits: s.credits + 1, hinted: true, sents: [...(s.sents || []), sent] });
     } else {
-      const bank = mode === "scen" && SCENARIO_SENTENCES[scenario] ? functionalish(SCENARIO_SENTENCES[scenario]) : FUNCTIONAL;
-      const list = notRecent(bank);
-      const sent = list[Math.floor(Math.random() * list.length)];
-      const targets = targetsOf(sent);
-      nx = { kind: "carry", sentence: sent, targets, w: topTarget(sent) };
-      recordSeen(nx.w);
-      markRecent(sent);
-      setSetItems((p) => [...p, nx.w]);
+      // §10 Bonus Round: one sentence per scenario, highlight only a word
+      // practiced this session (none at all otherwise — never a substitute).
+      let q = s.bonusQ;
+      if (!q) { q = buildBonusQueue(s); s = updSess({ bonusQ: q }); }
+      const pick = q[Math.min(s.count, q.length - 1)];
+      const targets = targetsOf(pick.sentence);
+      nx = { kind: "bonus", sentence: pick.sentence, w: pick.w };
+      markRecent(pick.sentence);
+      if (pick.w) setSetItems((p) => [...p, pick.w]);
       bump(targets.length, false);
       updSess({ count: s.count + 1, credits: s.credits + targets.length });
     }
@@ -370,7 +405,7 @@ export default function App() {
     const e = s.plan[s.idx];
     const same = s.plan.filter((p) => p.stage === e.stage).length;
     const pos = s.plan.slice(0, s.idx).filter((p) => p.stage === e.stage).length + 1;
-    const name = e.stage === "warmup" ? "Warm-up" : e.stage === "couples" ? "Sentences" : "Real life";
+    const name = e.stage === "warmup" ? "Warm-up" : e.stage === "couples" ? "Sentences" : "Bonus Round";
     return { name: same > 1 ? `${name} — set ${pos} of ${same}` : name, n: e.n };
   };
 
@@ -381,11 +416,12 @@ export default function App() {
         if (!alive) return;
         next();
         if (tickOn) playTick();
-        // sentences run at half the word pace — twice the reading time
+        // §7: one shared WPM. A sentence holds for its actual word count —
+        // (words ÷ WPM) × 60s — so a five-word sentence gets five words' time.
         const cur = itemRef.current;
         const base = (60 / wpm) * 1000;
-        const slow = cur && (cur.kind === "carry" || (cur.kind === "couple" && cur.beat === 2));
-        timerRef.current = setTimeout(step, slow ? base * 2 : base);
+        const isSent = cur && (cur.kind === "bonus" || (cur.kind === "couple" && cur.beat === 2));
+        timerRef.current = setTimeout(step, isSent ? cur.sentence.split(/\s+/).length * base : base);
       };
       step();
       return () => { alive = false; clearTimeout(timerRef.current); };
@@ -511,9 +547,10 @@ export default function App() {
     .word { font-weight: 700; font-size: calc(clamp(44px, 13vw, 76px) * ${fontScale}); letter-spacing: -0.01em; text-align: center; line-height: 1.05; color: ${T.blue}; }
     .pairWrap { display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px 20px; align-items: baseline; justify-content: center; }
     .pair2 { font-weight: 700; font-size: calc(clamp(44px, 13vw, 76px) * ${fontScale}); letter-spacing: -0.01em; text-align: center; line-height: 1.05; color: ${T.blue}; }
-    .sentWrap { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 12px; max-width: 560px; }
-    .sw { font-weight: 400; font-size: calc(clamp(26px, 7vw, 42px) * ${fontScale}); line-height: 1.2; color: ${T.mut}; padding: 2px 8px; border-radius: 10px; }
-    .sw.tgt { color: ${T.blue}; font-weight: 700; background: ${T.chip}; }
+    .sentWrap { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 18px; max-width: 900px; }
+    .sw { font-weight: 400; font-size: calc(clamp(44px, 13vw, 76px) * ${fontScale}); line-height: 1.1; color: ${T.blue}; padding: 0 4px; border-radius: 12px; }
+    .sw.tgt { font-weight: 700; background: ${T.chip}; }
+    .coupleHint { margin-top: 18px; font-size: ${S(24)}; color: ${T.ink}; text-align: center; line-height: 1.35; }
     .idle { color: ${T.mut}; font-size: ${S(17)}; text-align: center; max-width: 340px; line-height: 1.5; }
     .controls { padding: 0 16px 26px; }
     .paceRow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; background: ${T.card}; border-radius: 16px; padding: 10px 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(20,25,40,0.10); min-height: 60px; }
@@ -662,7 +699,7 @@ export default function App() {
           <p className="sub"><b>Momentum you can see.</b> Daily rings, streaks, and milestone awards make every session count.</p>
           <p className="sub" style={{ marginBottom: 0 }}><i>A practice tool, not medical treatment — keep working with your care team.</i></p>
         </div>
-        <button className="cta" onClick={() => setScreen("condition")}>START</button>
+        <button className="cta" onClick={() => setScreen("assess")}>START</button>
         {returning && (
           <button className="ghost" style={{ display: "block", width: "calc(100% - 32px)", margin: "0 16px 20px" }}
             onClick={() => setScreen("progress")}>Back to my practice</button>
@@ -679,15 +716,16 @@ export default function App() {
         <Header right={null} />
         <div className="card">
           <h2>What brings you here?</h2>
-          <p className="sub">This tunes which sounds get the most practice time. You can fine-tune on the next screen — and change it any time.</p>
+          <p className="sub">This tunes the recommended practice mix for you. You can change it — or your sound ratings — any time in Settings.</p>
           {CONDITIONS.map((c) => (
             <button key={c.id} className="condBtn" onClick={() => {
               setCondition(c.id);
               setVariant(COND_VARIANT[c.id]);
-              const p = PRESETS[c.id];
-              setRatings({ th: p.th, tri: p.tri, lb: p.lb, rb: p.rb, sb: p.sb, fc: p.fc });
-              setNotSure(false);
-              setScreen("assess");
+              if (useRec) {
+                const p = PRESETS[c.id];
+                setRatings({ th: p.th, tri: p.tri, lb: p.lb, rb: p.rb, sb: p.sb, fc: p.fc });
+              }
+              setScreen("drill");
             }}>{c.name}</button>
           ))}
         </div>
@@ -721,6 +759,8 @@ export default function App() {
         </div>
         <button className="cta" onClick={() => {
           setRatings((rt) => ({ ...rt, ...draft.sugg }));
+          setManualRatings((rt) => ({ ...(rt || ratings), ...draft.sugg }));
+          setUseRec(false); // saving custom scores is a manual choice (§8)
           setLastRescoreSets(totalSetsAll);
           setScreen("progress");
         }}>Save my new ratings</button>
@@ -735,34 +775,35 @@ export default function App() {
         <style>{css}</style>
         <Header right={<span className="hdrBtn" style={{ color: T.mut, cursor: "default", background: "none" }}>SETUP</span>} />
         <div className="card">
-          <h2>Rate each sound type</h2>
-          <p className="sub"><b>5 = hardest for you.</b> Higher ratings get more practice time.{condition ? " We've pre-filled recommended scores for you — adjust any." : ""}</p>
+          <h2>What's hard for you right now?</h2>
+          <p className="sub"><b>5 = hardest for you.</b> Higher ratings get more practice time. Leave "Use recommended" on and we'll tune this for you — or switch it off to set your own. You can update these any time in Settings.</p>
           <div className="setting" style={{ paddingTop: 0 }}>
-            <span className="setLbl">I don't know — use recommended</span>
+            <span className="setLbl">Use recommended</span>
             <button className="switch" onClick={() => {
-              const on = !notSure;
-              setNotSure(on);
+              const on = !useRec;
+              setUseRec(on);
               if (on) {
+                setManualRatings(ratings); // §8: manual choices survive the flip back
                 const p = PRESETS[condition || "other"];
                 setRatings({ th: p.th, tri: p.tri, lb: p.lb, rb: p.rb, sb: p.sb, fc: p.fc });
-              }
-            }} aria-pressed={notSure}>
-              <span className={"track" + (notSure ? " on" : "")}><span className="knob" /></span>
+              } else if (manualRatings) setRatings(manualRatings);
+            }} aria-pressed={useRec}>
+              <span className={"track" + (useRec ? " on" : "")}><span className="knob" /></span>
             </button>
           </div>
           {CATS.map((c) => (
-            <div className="catRow" key={c.id} style={notSure ? { opacity: 0.55 } : null}>
+            <div className="catRow" key={c.id} style={useRec ? { opacity: 0.55 } : null}>
               <div className="catTop"><span className="catName">{c.name}</span><span className="catEx">like {c.ex}</span></div>
               <div className="dots">
                 {[1, 2, 3, 4, 5].map((n) => (
                   <button key={n} className={"dot" + (ratings[c.id] === n ? " on" : "")}
-                    onClick={() => { if (!notSure) setRatings({ ...ratings, [c.id]: n }); }}>{n}</button>
+                    onClick={() => { if (!useRec) { const nr = { ...ratings, [c.id]: n }; setRatings(nr); setManualRatings(nr); } }}>{n}</button>
                 ))}
               </div>
             </div>
           ))}
         </div>
-        <button className="cta" onClick={() => setScreen("drill")}>Start practicing</button>
+        <button className="cta" onClick={() => setScreen(condition ? "drill" : "condition")}>{condition ? "Start practicing" : "Continue"}</button>
         <SizeRow />
       </div>
     );
@@ -852,9 +893,15 @@ export default function App() {
             </button>
           </div>
           <div className="setting">
-            <span className="setLbl">Sound ratings</span>
-            <button className="hdrBtn" onClick={() => { if (totalWords > 0) goRescore(); else { setPlaying(false); setScreen("assess"); } }}>Edit</button>
+            <span className="setLbl">Sound ratings — what's hard right now</span>
+            <button className="hdrBtn" onClick={() => { setPlaying(false); setScreen("assess"); }}>Edit</button>
           </div>
+          {totalWords > 0 && (
+            <div className="setting">
+              <span className="setLbl">Suggested ratings from your hard words</span>
+              <button className="hdrBtn" onClick={goRescore}>See</button>
+            </div>
+          )}
         </div>
         <SizeRow />
       </div>
@@ -992,10 +1039,16 @@ export default function App() {
             </div>
           </div>
           <div className="tile" style={{ display: "flex", flexDirection: "column" }}>
-            <div className="tileLbl">All-time</div>
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", gap: 8 }}>
-              <div className="streakNum" style={{ color: T.blue, fontSize: "calc(40px * " + fontScale + ")" }}>{totalWords.toLocaleString()}</div>
-              <div className="streakLbl">words</div>
+            <div className="tileLbl">Daily record</div>
+            <div className="legend" style={{ flex: 1, justifyContent: "center" }}>
+              {(() => {
+                const best = Object.values(hist).reduce((b, d) => ({
+                  w: Math.max(b.w, d.w || 0), p: Math.max(b.p, d.p || 0), s: Math.max(b.s, d.s || 0),
+                }), { w: 0, p: 0, s: 0 });
+                return [["Words", best.w, T.blue], ["Pairs", best.p, dark ? T.amber : "#8A6414"], ["Sets", best.s, T.rust]].map(([lbl, v, col]) => (
+                  <div key={lbl}><div className="legLbl">{lbl}</div><div className="legVal" style={{ color: col }}>{v.toLocaleString()}</div></div>
+                ));
+              })()}
             </div>
           </div>
         </div>
@@ -1060,7 +1113,9 @@ export default function App() {
             <div className="idle" style={{ margin: "0 auto 16px" }}>Pick a situation — practice the words you actually need there.</div>
             <div className="wordGrid" style={{ justifyContent: "center" }}>
               {SCENARIOS.map((s) => (
-                <button key={s.id} className="wchip" onClick={() => setScenario(s.id)}>{s.name}</button>
+                <button key={s.id} className="wchip" onClick={() => setScenario(s.id)}>
+                  {s.name}{!SCEN_READY[s.id] && <span style={{ display: "block", fontSize: S(12), color: T.mut, fontWeight: 700 }}>In progress</span>}
+                </button>
               ))}
             </div>
           </div>
@@ -1071,10 +1126,21 @@ export default function App() {
               ? (paced
                 ? "Press Start. Pairs appear one at a time — say both words out loud before the next arrives."
                 : "Tap Next to begin. Say both words out loud, then tap Next when you're ready.")
-              : "Tap Next to begin. A short warm-up of single words, then each word inside a sentence you'd really say. Everything out loud."}
+              : "Tap Next to begin. A short warm-up of single words, then each word inside sentences that build from easy to a real workout. Everything out loud."}
           </div>
         )}
-        {sess?.brk && (
+        {sess?.brk && (sess.plan[sess.idx + 1]?.stage === "bonus" ? (
+          // §10: Bonus Round is optional — Finish and Bonus Round are equal
+          // choices, and the session counts as complete either way.
+          <div style={{ textAlign: "center", width: "100%", maxWidth: 420 }}>
+            <div className="awardWrap"><Badge size={72} color={T.blue} ring={T.amber} star="#fff" /></div>
+            <h2 style={{ margin: "12px 0 4px" }}>{stageInfo(sess).name} done!</h2>
+            <p className="idle" style={{ margin: "0 auto 18px" }}>Up for a Bonus Round? Six real-life sentences, one from each situation. The session is complete either way.</p>
+            <button className="cta" style={{ width: "100%", margin: "0 0 10px" }} onClick={() => resumeEntry(false)}>Bonus Round</button>
+            <button className="cta" style={{ width: "100%", margin: "0 0 10px" }} onClick={() => updSess({ brk: false, finished: true })}>Finish</button>
+            <button className="ghost" style={{ display: "block", width: "100%" }} onClick={() => resumeEntry(true)}>Redo that set</button>
+          </div>
+        ) : (
           <div style={{ textAlign: "center", width: "100%", maxWidth: 420 }}>
             <div className="awardWrap"><Badge size={72} color={T.blue} ring={T.amber} star="#fff" /></div>
             <h2 style={{ margin: "12px 0 4px" }}>{stageInfo(sess).name} done!</h2>
@@ -1082,19 +1148,23 @@ export default function App() {
             <button className="cta" style={{ width: "100%", margin: "0 0 10px" }} onClick={() => resumeEntry(false)}>Continue</button>
             <button className="ghost" style={{ display: "block", width: "100%" }} onClick={() => resumeEntry(true)}>Redo that set</button>
           </div>
-        )}
+        ))}
         {item && !sess?.brk && item.kind === "word" && <div className="word">{item.w}</div>}
         {item && !sess?.brk && item.kind === "couple" && item.beat === 1 && (
           <>
             <div className="word">{item.w}</div>
-            {item.hint && <div className="meta" style={{ marginTop: 16, fontSize: S(18) }}>say it — its sentence comes next</div>}
+            {item.hint && <div className="coupleHint">say it — its sentence comes next</div>}
           </>
         )}
-        {item && !sess?.brk && (item.kind === "carry" || (item.kind === "couple" && item.beat === 2)) && (
+        {item && !sess?.brk && (item.kind === "bonus" || (item.kind === "couple" && item.beat === 2)) && (
           <div className="sentWrap">
-            {item.sentence.split(" ").map((t, i) => (
-              <span key={i} className={"sw" + (item.targets.includes(cleanToken(t)) ? " tgt" : "")}>{t}</span>
-            ))}
+            {(() => {
+              // §5: exactly one highlighted word — the couple's target (or the
+              // session word a bonus sentence carries), first occurrence only.
+              const toks = item.sentence.split(" ");
+              const hi = item.w ? toks.findIndex((t) => cleanToken(t) === item.w) : -1;
+              return toks.map((t, i) => <span key={i} className={"sw" + (i === hi ? " tgt" : "")}>{t}</span>);
+            })()}
           </div>
         )}
         {item && mode === "pairs" && item.pair && (

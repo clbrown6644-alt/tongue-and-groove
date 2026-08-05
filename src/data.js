@@ -1,29 +1,36 @@
-import { WORD_TIERS, WORD_CORE, WORD_SLP, WORDS_PS } from "./words.gen.js";
-export { WORD_TIERS };
+import { WORDS_BY_CAT, WORD_META, WORDS_PS } from "./words.gen.js";
+export { WORD_META, WORDS_PS };
 
-// Practice order per category: 2 core (rank 1-1,000) words for every 1
-// SLP-informed addition (clinically valuable words from ranks 1,001-1,500 —
-// 3+ syllables, heavy clusters, or place-switchers). Both lists come
-// syllable-sorted (short first), so decks ramp word length as they unlock.
-// "ps" is the hidden place-switcher category — practiced, never shown in scoring.
-function mix2to1(core, adds) {
-  const out = [];
-  let i = 0, j = 0;
-  while (i < core.length || j < adds.length) {
-    for (let k = 0; k < 2 && i < core.length; k++) out.push(core[i++]);
-    if (j < adds.length) out.push(adds[j++]);
-  }
-  return out;
-}
-export const WORDS = {
-  ...Object.fromEntries(Object.keys(WORD_CORE).map((c) => [c, mix2to1(WORD_CORE[c], WORD_SLP[c] || [])])),
-  ps: WORDS_PS,
+// Pool (Correction Spec v2): every word passed two gates — contains a cluster
+// from the six categories AND clears the automaticity guard (top-500 words
+// only stay with 3+ syllables, 2+ clusters, or a 3-consonant cluster). Each
+// carries a stored difficulty tier 2-5 in WORD_META; tier 1 was deleted at
+// build time. Warm-up selection spreads across tiers (§1E) — see App.jsx.
+export const WORDS = WORDS_BY_CAT;
+
+// Category tests for arbitrary words (mirror scripts/build_words.py). Used to
+// tag sentences with target-sound instance counts and to pick the highlight.
+const FC_EX = /(gh|ght|ng|ck|ss|ll|ff|zz|mb|gn|wn|sh|ch|tch|dge|ce|ge|se|ze|ve|le|re|ue|ye|oe)$/;
+export const CAT_TESTS = {
+  th: (w) => w.includes("th"),
+  tri: (w) => /(str|spr|scr|spl|squ|thr)/.test(w),
+  lb: (w) => /(bl|cl|fl|gl|pl|sl)/.test(w) && !/(b|p|c|g|f|d|t|s)les?$/.test(w),
+  rb: (w) => /(br|cr|dr|fr|gr|pr|tr)/.test(w),
+  sb: (w) => /^s(t|p|c|k|m|n|w)/.test(w),
+  fc: (w) => /[bcdfgklmnprstvz]{2}$/.test(w) && !FC_EX.test(w) && !/[aeiou]th$/.test(w),
 };
-
-// Why 2:1 and not 50/50: common words carry real-life carryover and confidence;
-// clinical words drive motor gains. A third clinical keeps drills recognizable
-// while every third word stretches the mouth. Condition presets tune WHICH
-// categories get time; the mix stays constant.
+// Primary category of a word — hardest/most specific pattern wins.
+const CAT_PRIORITY = ["tri", "th", "sb", "lb", "rb", "fc"];
+export function catOf(word) {
+  return CAT_PRIORITY.find((c) => CAT_TESTS[c](word)) || null;
+}
+// How many times a word carries the category's sound (word must pass the test).
+const CAT_COUNTERS = { th: /th/g, tri: /(str|spr|scr|spl|squ|thr)/g, lb: /(bl|cl|fl|gl|pl|sl)/g, rb: /(br|cr|dr|fr|gr|pr|tr)/g };
+export function catCount(word, cat) {
+  if (!CAT_TESTS[cat]?.(word)) return 0;
+  const re = CAT_COUNTERS[cat];
+  return re ? (word.match(re) || []).length : 1; // sb/fc: once per word
+}
 
 // Condition presets — default 1-5 category weights per diagnosis, set at the
 // "What brings you here?" screen. ps = hidden place-switcher weight.
@@ -67,13 +74,15 @@ export const SENTENCES = {
   fc: ["Hold the cold milk with both hands.","The old band played past midnight last night.","Send the list to my old friend.","He built a small fort in the west field.","Hold my hand and help the child stand.","The old barn stood in the cold wind.","First, send the list to the front desk.","Milk and toast make a fast breakfast.","The band marched past the old church at dusk.","Hard work helped him hold his ground.","The child found gold sand at the beach.","Paint the fence and mend the yard."],
 };
 
+// Example words are real pool members (post two-gate filter) — never show a
+// word the app itself would refuse to drill.
 export const CATS = [
-  { id: "th",  name: "TH sounds",        ex: "three, month, think" },
-  { id: "tri", name: "3-consonant clusters", ex: "street, strong, spring" },
-  { id: "lb",  name: "L-blends",         ex: "please, black, clap" },
-  { id: "rb",  name: "R-blends",         ex: "train, friend, grow" },
-  { id: "sb",  name: "S-blends",         ex: "stop, spin, small" },
-  { id: "fc",  name: "Final clusters",   ex: "world, want, help" },
+  { id: "th",  name: "TH sounds",        ex: "think, through, health" },
+  { id: "tri", name: "3-consonant clusters", ex: "street, strong, spread" },
+  { id: "lb",  name: "L-blends",         ex: "playing, plant, clearly" },
+  { id: "rb",  name: "R-blends",         ex: "friend, bring, problem" },
+  { id: "sb",  name: "S-blends",         ex: "stand, school, specific" },
+  { id: "fc",  name: "Final clusters",   ex: "almost, front, wants" },
 ];
 
 // Situation packs — functional vocabulary for real settings. Deliberately mixes
@@ -90,7 +99,7 @@ export const SCENARIOS = [
 
 // ---------------------------------------------------------------------------
 // Practice restructure (2026-08 build spec): Words + Sentences merge into one
-// staged session — warm-up words, then word→sentence "couples", then carryover.
+// staged session — warm-up words, then word→sentence "couples", then a bonus.
 // Scenario sentences below are the couples material: first person, 6–10 words,
 // adult phrasing, each containing at least one mechanically demanding word
 // from its pack. Doctor & Restaurant run 60 deep (event-prep priorities 1–2);
@@ -159,6 +168,20 @@ export const SCENARIO_SENTENCES = {
     "Please speak slowly — I had a stroke.",
     "What symptoms should I watch out for?",
     "Thank you, doctor — that answers my questions.",
+    // §6 ladder content — authored 2-instance and 3+-instance sentences so the
+    // couples sets can escalate 1 → 2 → 3+ (counts verified by tag_sentences.mjs)
+    "The specialist listened to my stomach.",
+    "Swallow twice and stay calm.",
+    "The specialist still wants me to practice standing.",
+    "My swallowing study starts this Monday.",
+    "I stand at the stove until my stomach settles.",
+    "The prescription instructions were stricter than I expected.",
+    "The doctor brought me a fresh drink of water.",
+    "My therapist thinks the therapy is helping my throat.",
+    "The nurse placed my arm in a blue sling.",
+    "I take the stairs to stay steady.",
+    "The test results felt like good news at last.",
+    "My birthday is the thirtieth of this month.",
   ],
   rest: [
     "I have a reservation for six o'clock.",
@@ -221,6 +244,27 @@ export const SCENARIO_SENTENCES = {
     "Do you take reservations for large groups?",
     "My steak is overcooked — I ordered medium.",
     "Thank you — the service was wonderful tonight.",
+    // §6 ladder content — authored 2-instance and 3+-instance sentences
+    "The steak special sounds good tonight.",
+    "Bring my friend the check, please.",
+    "Thanks — I think we're ready to order.",
+    "Could I get a straw for my strawberry shake?",
+    "I'd like the roast beef with wild rice.",
+    "Could you spare a spoon for the soup?",
+    "Please refill my glass when you can.",
+    "My salad needs salt and fresh ground pepper.",
+    "We'd like a clean table close to the window.",
+    "Could we split the strawberry shortcake for dessert?",
+    "Please place the clean plates on the table.",
+    "The steak special comes with sweet potatoes.",
+    "I'll start with the spicy shrimp and a small salad.",
+    "The grilled shrimp came with fresh bread.",
+    "My friend tried the crispy fried chicken.",
+    "Thank them for the thoughtful birthday cake.",
+    "The pork chops came with corn and cold milk.",
+    "Please bring blueberry pancakes with black coffee.",
+    "Could we start with the steak special?",
+    "Stop by the salad station before the steaks arrive.",
   ],
   phone: [
     "Hello, may I speak with the billing department?",
@@ -352,9 +396,9 @@ export const SCENARIO_SENTENCES = {
   ],
 };
 
-// Carryover stage (Practice mode): short functional sentences — the things a
-// person actually needs to say clearly this week. Scenario sessions draw
-// carryover from their own bank instead (requests and questions first).
+// Functional sentences — the things a person actually needs to say clearly
+// this week. No longer a session stage (the Bonus Round replaced carryover);
+// kept as reference material and future custom-phrase seed content.
 export const FUNCTIONAL = [
   "Could you speak a little slower, please?",
   "I need a minute to get the words out.",
@@ -373,7 +417,7 @@ export const FUNCTIONAL = [
 // Words that never count as practice targets — articles, prepositions,
 // auxiliaries, pronouns, and other carrier glue (build-spec counting rule:
 // target words only, carrier words never).
-const FUNCTION_WORDS = new Set(("a an the and or but so if then than that this these those there here " +
+export const FUNCTION_WORDS = new Set(("a an the and or but so if then than that this these those there here " +
   "of to in on at by for from with without into over under about after before between during up down out off " +
   "is are was were be been being am do does did done have has had having will would can could should may might " +
   "must shall it its i you he she we they them him her his my your our their me us mine yours what which who " +
@@ -431,6 +475,28 @@ export function topTarget(sentence) {
   return t.length ? t.reduce((a, b) => (difficultyScore(b) > difficultyScore(a) ? b : a)) : cleanToken(sentence.split(/\s+/)[0]);
 }
 
+// Ladder target: the hardest word that carries one of the six target sounds.
+// (topTarget can land on a hard-but-categoryless word like "minutes"; the
+// couple's beat-1 word must have a sound to escalate.) Null when no word in
+// the sentence carries a target sound.
+export function ladderTarget(sentence) {
+  const t = targetsOf(sentence).filter((w) => catOf(w));
+  return t.length ? t.reduce((a, b) => (difficultyScore(b) > difficultyScore(a) ? b : a)) : null;
+}
+
+// Instances of a target sound across a sentence (function words never count).
+// This is the §6 ladder number: 1 → set 1, 2 → set 2, 3+ → set 3.
+export function sentenceInstances(sentence, cat) {
+  if (!cat) return 0;
+  let n = 0;
+  for (const tok of sentence.split(/\s+/)) {
+    const w = cleanToken(tok);
+    if (!w || FUNCTION_WORDS.has(w)) continue;
+    n += catCount(w, cat);
+  }
+  return n;
+}
+
 // Condition variants (build spec §3): only the warm-up shape changes — apraxia
 // needs volume at the word level (motor plan is the work), dysarthria should
 // reach connected speech fast (plan intact, execution degraded).
@@ -442,6 +508,6 @@ export const VARIANTS = [
 export const COND_VARIANT = { stroke: "dysarthria", dementia: "apraxia", tbi: "dysarthria", parkinsons: "dysarthria", other: "dysarthria" };
 
 export const MILESTONES = [500, 1000, 2000, 5000, 10000, 15000];
-// Daily ring scales, recalibrated for staged sessions: one full session banks
-// ~175 target credits and 5 stage-sets, so the rings ≈ two sessions a day.
-export const GOALS = { words: 350, pairs: 80, sets: 10 };
+// Daily ring capacity (CB 2026-08-04): high ceilings so a heavy practice day
+// still shows progress inside the ring instead of lapping it early.
+export const GOALS = { words: 1200, pairs: 150, sets: 50 };

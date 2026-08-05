@@ -5,38 +5,42 @@
 import { execSync } from "child_process";
 import { writeFileSync } from "fs";
 
-const { WORD_CORE, WORD_SLP, WORDS_PS } = await import("../src/words.gen.js");
+const { WORDS_BY_CAT, WORD_META, WORDS_PS } = await import("../src/words.gen.js");
+const { SENT_META } = await import("../src/sentences.gen.js");
 const { PAIRS, SENTENCES, CATS, SCENARIOS, SCENARIO_SENTENCES, FUNCTIONAL, PRESETS, CONDITIONS, VARIANTS } = await import("../src/data.js");
 
 const VAULT = "/Users/chrisbrown/Projects/obsidian-vault/CB_Brain/Business Projects/Tongue and Groove/02-Technical-Docs";
 const stamp = new Date().toISOString().slice(0, 10);
 
 const catName = Object.fromEntries(CATS.map((c) => [c.id, c.name]));
-const nCore = Object.values(WORD_CORE).reduce((a, v) => a + v.length, 0);
-const nSlp = Object.values(WORD_SLP).reduce((a, v) => a + v.length, 0);
+const nWords = Object.keys(WORD_META).length;
 const nScen = Object.values(SCENARIO_SENTENCES).reduce((a, v) => a + v.length, 0);
 const nSent = Object.values(SENTENCES).reduce((a, v) => a + v.length, 0);
+const tierOf = (w) => WORD_META[w]?.t ?? 0;
 
 let md = `---
 project: Tongue and Groove
 type: reference
-status: regenerated ${stamp} — junk-word purge + staged-session sentence banks
+status: regenerated ${stamp} — Correction Spec v2: two-gate pool, difficulty tiers, sentence ladder
 ---
 
 # Tongue and Groove — Word Library
 
-Every word and sentence in the app. The word library is built two ways at once: a CORE of the most common conversational English words (rank 1–1,000, filtered to motor-difficult patterns), plus SLP-INFORMED ADDITIONS from ranks 1,001–1,500 kept only when clinically valuable (3+ syllables, a heavy consonant cluster, or a place-switcher). Web-corpus junk — URLs, acronyms, proper nouns, brand names — is filtered out: every entry is a real spoken word that exercises the tongue. Practice decks deal 2 core words for every 1 addition, ordered short-words-first so length ramps up.
+Every word and sentence in the app. Each word passed two gates: it contains a cluster from one of the six target sound categories, AND it clears the automaticity guard — words in the top-500 frequency band are dropped unless they carry 3+ syllables, 2+ clusters, or a 3-consonant cluster (over-rehearsed words like *best, most, world* teach nothing). Survivors are scored 1–5 on syllables, clusters, cluster position, and frequency; tier 1 (trivially easy) is deleted. Tiers 2–3 come from the top 1,500 conversational words; tier 4–5 depth also draws on ranks 1,500–3,000. Web-corpus junk and function words are filtered out. Full audit: vocab-audit.md in the repo.
 
-Since the ${stamp.slice(0, 7)} practice restructure, a session runs warm-up words → 3×10 word→sentence couples → carryover. The couples draw on the sentence banks below; only target words (2+ syllables, a cluster, or a TH — never "the/was/and") count toward practice totals.
+A session runs a 30-word warm-up (tier spread 6/9/9/6, categories weighted by the user's ratings) → 3×10 word→sentence couples that escalate 1 → 2 → 3+ instances of the target sound → an optional 6-sentence Bonus Round drawn one-per-scenario.
 
-**Totals: ${nCore} core + ${nSlp} SLP-addition + ${WORDS_PS.length} place-switcher words · ${nSent} drill sentences · ${nScen} scenario sentences · ${FUNCTIONAL.length} carryover sentences**
+**Totals: ${nWords} pool words (tiers 2–5) + ${WORDS_PS.length} place-switchers · ${nSent} drill sentences · ${nScen} scenario sentences**
 
 `;
 
 for (const c of CATS) {
-  md += `## ${c.name} (${WORD_CORE[c.id].length} core + ${(WORD_SLP[c.id] || []).length} SLP additions)\n\n`;
-  md += `### Core — most common 1,000 (${WORD_CORE[c.id].length})\n\n${WORD_CORE[c.id].join(", ")}\n\n`;
-  md += `### SLP additions — ranks 1,001–1,500, clinically filtered (${(WORD_SLP[c.id] || []).length})\n\n${(WORD_SLP[c.id] || []).join(", ")}\n\n`;
+  const list = WORDS_BY_CAT[c.id];
+  md += `## ${c.name} (${list.length})\n\n`;
+  for (const t of [2, 3, 4, 5]) {
+    const tw = list.filter((w) => tierOf(w) === t);
+    if (tw.length) md += `### Tier ${t} (${tw.length})\n\n${tw.join(", ")}\n\n`;
+  }
 }
 
 md += `## Place-switchers — hidden category (${WORDS_PS.length} words)\n\n### Practiced in rotation, never shown in scoring. Words forcing lips ↔ tongue-tip ↔ back-of-tongue jumps.\n\n${WORDS_PS.join(", ")}\n\n`;
@@ -55,19 +59,20 @@ for (const [id, ps] of Object.entries(PAIRS)) {
   md += `### ${pairName[id]} (${ps.length})\n\n${ps.map(([a, b]) => `${a}/${b}`).join(", ")}\n\n`;
 }
 
-md += `## Drill sentences (every sentence carries 4+ target-pattern words)\n\n`;
+const ladder = (s) => { const m = SENT_META[s]; return m && m.cat && m.n ? ` (${m.cat} ×${m.n})` : ""; };
+md += `## Drill sentences — heavily loaded, tagged with target sound × instance count\n\n`;
 for (const [id, ss] of Object.entries(SENTENCES)) {
-  md += `### ${catName[id]} (${ss.length})\n\n${ss.map((s) => `- ${s}`).join("\n")}\n\n`;
+  md += `### ${catName[id]} (${ss.length})\n\n${ss.map((s) => `- ${s}${ladder(s)}`).join("\n")}\n\n`;
 }
 
-md += `## Scenario packs — words and sentence banks\n\nDoctor and Restaurant run 60 sentences deep (event-prep priorities); the rest are session-ready at 30. Every sentence is first-person, 6–10 words, adult phrasing, and contains at least one mechanically demanding word.\n\n`;
+md += `## Scenario packs — words and sentence banks\n\nDoctor and Restaurant are fully ladder-populated (10+ sentences at every rung 1 / 2 / 3+); the rest show "In progress" in the app until their 2- and 3-instance rungs fill out. Each sentence is tagged with its target sound and instance count — that tag drives which couples set it can serve.\n\n`;
 for (const sc of SCENARIOS) {
   md += `### ${sc.name} (${sc.words.length} words · ${(SCENARIO_SENTENCES[sc.id] || []).length} sentences)\n\n`;
   md += `**Words:** ${sc.words.join(", ")}\n\n`;
-  md += `**Sentences:**\n${(SCENARIO_SENTENCES[sc.id] || []).map((s) => `- ${s}`).join("\n")}\n\n`;
+  md += `**Sentences:**\n${(SCENARIO_SENTENCES[sc.id] || []).map((s) => `- ${s}${ladder(s)}`).join("\n")}\n\n`;
 }
 
-md += `## Carryover sentences (Practice mode)\n\n${FUNCTIONAL.map((s) => `- ${s}`).join("\n")}\n`;
+md += `## Functional sentences (reference — no longer a session stage)\n\n${FUNCTIONAL.map((s) => `- ${s}`).join("\n")}\n`;
 
 writeFileSync(`${VAULT}/Tongue and Groove Word Library.md`, md);
 
@@ -105,4 +110,4 @@ writeFileSync(tmpHtml, html);
 execSync(`textutil -convert docx -output "${VAULT}/Tongue and Groove Word Library.docx" "${tmpHtml}"`);
 // CB's copy in the project folder — same file, easier to find than the vault
 execSync(`cp "${VAULT}/Tongue and Groove Word Library.docx" "/Users/chrisbrown/Projects/Tongue-Groove/Tongue and Groove Word Library.docx"`);
-console.log(`wrote Word Library .md + .docx (${stamp}) — ${nCore + nSlp} words, ${nSent + nScen + FUNCTIONAL.length} sentences`);
+console.log(`wrote Word Library .md + .docx (${stamp}) — ${nWords} words, ${nSent + nScen + FUNCTIONAL.length} sentences`);
