@@ -7,8 +7,10 @@ Gate 1 — category membership: word must contain a cluster from one of the six
          target categories (th / tri / lb / rb / sb / fc).
 Gate 2 — automaticity guard: words in the top-500 frequency band are rejected
          unless they have 3+ syllables, 2+ qualifying clusters, or a
-         3-consonant cluster (removes best/most/world/first/next/last;
-         keeps wrists/strengths).
+         3-consonant cluster (removes best/most/world/first/next/last).
+Gate 3 — no single-syllable words, period (CB 2026-08-04: "we are not going
+         for easy even if common — it's not what trips people up"). Kills
+         street/bring/think/friend/free/great regardless of clusters.
 
 Every surviving word is scored 1-5 (syllables + clusters + position - frequency)
 and TIER 1 WORDS ARE DELETED. The usable pool is tiers 2-5.
@@ -194,15 +196,18 @@ for rank, w in enumerate(words):
     if not cats:
         continue      # never in the pool — Gate 1
     if rank >= TOP_N:
-        # deep band: only tier-4/5 material earns a place (hard-tier depth)
+        # deep band: only multi-syllable tier-4/5 material earns a place
         s, tier = score_word(w, rank)
-        if tier >= 4:
+        if tier >= 4 and syllables(w) >= 2:
             kept.append((w, rank, cats, s, tier))
             deep_added.append(w)
         continue
     pool_before.append((w, rank, cats))
     if w in FUNCTION_WORDS:
         deleted.append((w, "function word"))
+        continue
+    if syllables(w) < 2:
+        deleted.append((w, "single-syllable"))
         continue
     if not guard_passes(w, rank):
         deleted.append((w, "automaticity guard (top-500, no earn-back)"))
@@ -289,7 +294,10 @@ for _, r in deleted:
 print("deletions by reason:", reasons)
 if gaps:
     print("CONTENT GAPS (<20 words):", [CAT_NAMES[c] for c in gaps])
-spot = ["best", "most", "world", "first", "next", "last", "wrists", "strengths"]
+spot = ["best", "most", "world", "first", "next", "last", "the", "that", "with",
+        "think", "then", "street", "bring", "friend", "friends", "front", "trying",
+        "great", "free", "group", "true", "price", "work", "years", "part", "find",
+        "help", "old", "end", "want"]
 print("spot-check:", {w: ("KEPT t" + str(meta[w]["t"]) if w in meta else "gone") for w in spot})
 print("place-switchers (hidden, unused in warm-up):", len(ps))
 

@@ -77,12 +77,12 @@ export const SENTENCES = {
 // Example words are real pool members (post two-gate filter) — never show a
 // word the app itself would refuse to drill.
 export const CATS = [
-  { id: "th",  name: "TH sounds",        ex: "think, through, health" },
-  { id: "tri", name: "3-consonant clusters", ex: "street, strong, spread" },
-  { id: "lb",  name: "L-blends",         ex: "playing, plant, clearly" },
-  { id: "rb",  name: "R-blends",         ex: "friend, bring, problem" },
-  { id: "sb",  name: "S-blends",         ex: "stand, school, specific" },
-  { id: "fc",  name: "Final clusters",   ex: "almost, front, wants" },
+  { id: "th",  name: "TH sounds",        ex: "together, brother, weather" },
+  { id: "tri", name: "3-consonant clusters", ex: "structure, struggle, district" },
+  { id: "lb",  name: "L-blends",         ex: "problem, clearly, global" },
+  { id: "rb",  name: "R-blends",         ex: "program, practice, training" },
+  { id: "sb",  name: "S-blends",         ex: "student, specific, standard" },
+  { id: "fc",  name: "Final clusters",   ex: "almost, perfect, account" },
 ];
 
 // Situation packs — functional vocabulary for real settings. Deliberately mixes

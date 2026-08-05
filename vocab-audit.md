@@ -7,9 +7,9 @@ Two gates: (1) contains a cluster from the six categories; (2) automaticity guar
 | | words |
 |---|---|
 | Pool before filtering (all Gate-1 category members in top-1,500) | 541 |
-| Deleted | 268 |
+| Deleted | 342 |
 | Tier-4/5 depth additions from ranks 1,500-3,000 | 77 |
-| **Pool after filtering (tiers 2-5)** | **350** |
+| **Pool after filtering (tiers 2-5)** | **276** |
 
 ### Depth additions (ranks 1,500-3,000, admitted only when scoring tier 4-5)
 
@@ -19,23 +19,23 @@ extremely, influence, background, completed, thousands, slightly, appreciate, de
 
 | Category | words | gap? |
 |---|---|---|
-| TH sounds | 37 |  |
-| 3-consonant clusters | 26 |  |
-| L-blends | 44 |  |
-| R-blends | 129 |  |
-| S-blends | 38 |  |
-| Final/mid clusters | 180 |  |
+| TH sounds | 20 |  |
+| 3-consonant clusters | 16 | **CONTENT GAP — under 20** |
+| L-blends | 40 |  |
+| R-blends | 107 |  |
+| S-blends | 23 |  |
+| Final/mid clusters | 132 |  |
 
 ## Count per difficulty tier
 
 | Tier | words |
 |---|---|
-| 2 | 162 |
-| 3 | 95 |
+| 2 | 101 |
+| 3 | 82 |
 | 4 | 83 |
 | 5 | 10 |
 
-## Deleted words — 268, with reason
+## Deleted words — 342, with reason
 
 | Word | Reason |
 |---|---|
@@ -53,260 +53,338 @@ extremely, influence, background, completed, thousands, slightly, appreciate, de
 | other | function word |
 | its | function word |
 | than | function word |
-| first | automaticity guard (top-500, no earn-back) |
+| first | single-syllable |
+| think | single-syllable |
 | then | function word |
 | these | function word |
-| want | automaticity guard (top-500, no earn-back) |
+| want | single-syllable |
 | most | function word |
-| work | automaticity guard (top-500, no earn-back) |
-| years | automaticity guard (top-500, no earn-back) |
+| work | single-syllable |
+| years | single-syllable |
 | still | function word |
 | those | function word |
-| world | automaticity guard (top-500, no earn-back) |
-| great | automaticity guard (top-500, no earn-back) |
-| last | automaticity guard (top-500, no earn-back) |
-| best | automaticity guard (top-500, no earn-back) |
+| world | single-syllable |
+| great | single-syllable |
+| through | single-syllable |
+| last | single-syllable |
+| best | single-syllable |
 | both | function word |
-| part | automaticity guard (top-500, no earn-back) |
-| state | automaticity guard (top-500, no earn-back) |
+| part | single-syllable |
+| state | single-syllable |
+| three | single-syllable |
 | around | automaticity guard (top-500, no earn-back) |
-| find | automaticity guard (top-500, no earn-back) |
-| help | automaticity guard (top-500, no earn-back) |
-| old | automaticity guard (top-500, no earn-back) |
+| find | single-syllable |
+| help | single-syllable |
+| old | single-syllable |
 | another | function word |
-| place | automaticity guard (top-500, no earn-back) |
+| things | single-syllable |
+| thing | single-syllable |
+| place | single-syllable |
+| school | single-syllable |
 | without | function word |
 | against | function word |
-| end | automaticity guard (top-500, no earn-back) |
-| found | automaticity guard (top-500, no earn-back) |
+| end | single-syllable |
+| found | single-syllable |
 | must | function word |
-| please | automaticity guard (top-500, no earn-back) |
-| free | automaticity guard (top-500, no earn-back) |
+| please | single-syllable |
+| free | single-syllable |
 | second | automaticity guard (top-500, no earn-back) |
-| left | automaticity guard (top-500, no earn-back) |
-| play | automaticity guard (top-500, no earn-back) |
-| thought | automaticity guard (top-500, no earn-back) |
-| group | automaticity guard (top-500, no earn-back) |
+| left | single-syllable |
+| play | single-syllable |
+| thought | single-syllable |
+| group | single-syllable |
 | public | automaticity guard (top-500, no earn-back) |
-| start | automaticity guard (top-500, no earn-back) |
-| point | automaticity guard (top-500, no earn-back) |
-| told | automaticity guard (top-500, no earn-back) |
-| hard | automaticity guard (top-500, no earn-back) |
+| start | single-syllable |
+| point | single-syllable |
+| told | single-syllable |
+| hard | single-syllable |
 | support | automaticity guard (top-500, no earn-back) |
 | states | automaticity guard (top-500, no earn-back) |
-| stop | automaticity guard (top-500, no earn-back) |
-| small | automaticity guard (top-500, no earn-back) |
+| stop | single-syllable |
+| small | single-syllable |
 | though | function word |
-| try | automaticity guard (top-500, no earn-back) |
-| went | automaticity guard (top-500, no earn-back) |
-| black | automaticity guard (top-500, no earn-back) |
-| kind | automaticity guard (top-500, no earn-back) |
+| try | single-syllable |
+| went | single-syllable |
+| thank | single-syllable |
+| trying | single-syllable |
+| black | single-syllable |
+| kind | single-syllable |
 | story | automaticity guard (top-500, no earn-back) |
-| least | automaticity guard (top-500, no earn-back) |
-| means | automaticity guard (top-500, no earn-back) |
+| health | single-syllable |
+| least | single-syllable |
+| means | single-syllable |
 | within | function word |
-| post | automaticity guard (top-500, no earn-back) |
+| friends | single-syllable |
+| post | single-syllable |
+| thanks | single-syllable |
 | others | function word |
-| court | automaticity guard (top-500, no earn-back) |
-| fact | automaticity guard (top-500, no earn-back) |
-| hand | automaticity guard (top-500, no earn-back) |
-| mind | automaticity guard (top-500, no earn-back) |
-| death | automaticity guard (top-500, no earn-back) |
-| hours | automaticity guard (top-500, no earn-back) |
-| south | automaticity guard (top-500, no earn-back) |
-| true | automaticity guard (top-500, no earn-back) |
-| lost | automaticity guard (top-500, no earn-back) |
+| court | single-syllable |
+| fact | single-syllable |
+| hand | single-syllable |
+| mind | single-syllable |
+| death | single-syllable |
+| hours | single-syllable |
+| south | single-syllable |
+| true | single-syllable |
+| lost | single-syllable |
 | started | automaticity guard (top-500, no earn-back) |
-| girl | automaticity guard (top-500, no earn-back) |
+| girl | single-syllable |
 | pretty | automaticity guard (top-500, no earn-back) |
-| needs | automaticity guard (top-500, no earn-back) |
-| york | automaticity guard (top-500, no earn-back) |
-| class | automaticity guard (top-500, no earn-back) |
-| close | automaticity guard (top-500, no earn-back) |
-| looks | automaticity guard (top-500, no earn-back) |
-| past | automaticity guard (top-500, no earn-back) |
+| friend | single-syllable |
+| needs | single-syllable |
+| playing | single-syllable |
+| york | single-syllable |
+| class | single-syllable |
+| close | single-syllable |
+| looks | single-syllable |
+| past | single-syllable |
 | members | automaticity guard (top-500, no earn-back) |
-| ask | automaticity guard (top-500, no earn-back) |
-| north | automaticity guard (top-500, no earn-back) |
+| months | single-syllable |
+| ask | single-syllable |
+| north | single-syllable |
 | special | automaticity guard (top-500, no earn-back) |
 | either | function word |
-| short | automaticity guard (top-500, no earn-back) |
-| stay | automaticity guard (top-500, no earn-back) |
+| short | single-syllable |
+| stay | single-syllable |
 | rather | automaticity guard (top-500, no earn-back) |
 | report | automaticity guard (top-500, no earn-back) |
-| third | automaticity guard (top-500, no earn-back) |
-| turn | automaticity guard (top-500, no earn-back) |
+| third | single-syllable |
+| turn | single-syllable |
 | whether | function word |
-| form | automaticity guard (top-500, no earn-back) |
+| form | single-syllable |
 | further | automaticity guard (top-500, no earn-back) |
-| heart | automaticity guard (top-500, no earn-back) |
+| heart | single-syllable |
 | myself | automaticity guard (top-500, no earn-back) |
 | yourself | automaticity guard (top-500, no earn-back) |
-| act | automaticity guard (top-500, no earn-back) |
+| act | single-syllable |
 | although | function word |
-| child | automaticity guard (top-500, no earn-back) |
-| players | automaticity guard (top-500, no earn-back) |
-| art | automaticity guard (top-500, no earn-back) |
+| child | single-syllable |
+| players | single-syllable |
+| art | single-syllable |
 | behind | automaticity guard (top-500, no earn-back) |
-| plan | automaticity guard (top-500, no earn-back) |
-| west | automaticity guard (top-500, no earn-back) |
-| works | automaticity guard (top-500, no earn-back) |
-| kids | automaticity guard (top-500, no earn-back) |
-| list | automaticity guard (top-500, no earn-back) |
+| plan | single-syllable |
+| west | single-syllable |
+| works | single-syllable |
+| front | single-syllable |
+| kids | single-syllable |
+| list | single-syllable |
+| street | single-syllable |
+| bring | single-syllable |
 | current | automaticity guard (top-500, no earn-back) |
-| heard | automaticity guard (top-500, no earn-back) |
+| heard | single-syllable |
 | father | automaticity guard (top-500, no earn-back) |
 | process | automaticity guard (top-500, no earn-back) |
 | study | automaticity guard (top-500, no earn-back) |
-| word | automaticity guard (top-500, no earn-back) |
+| word | single-syllable |
 | across | automaticity guard (top-500, no earn-back) |
-| clear | automaticity guard (top-500, no earn-back) |
-| gets | automaticity guard (top-500, no earn-back) |
-| self | automaticity guard (top-500, no earn-back) |
-| words | automaticity guard (top-500, no earn-back) |
-| board | automaticity guard (top-500, no earn-back) |
-| cost | automaticity guard (top-500, no earn-back) |
-| field | automaticity guard (top-500, no earn-back) |
-| held | automaticity guard (top-500, no earn-back) |
+| clear | single-syllable |
+| gets | single-syllable |
+| month | single-syllable |
+| self | single-syllable |
+| words | single-syllable |
+| board | single-syllable |
+| cost | single-syllable |
+| field | single-syllable |
+| held | single-syllable |
 | moment | automaticity guard (top-500, no earn-back) |
 | mother | automaticity guard (top-500, no earn-back) |
-| seems | automaticity guard (top-500, no earn-back) |
-| played | tier 1 (score 0) |
-| price | tier 1 (score 0) |
-| rest | tier 1 (score 1) |
-| space | tier 1 (score 0) |
-| term | tier 1 (score -1) |
-| land | tier 1 (score 1) |
+| seems | single-syllable |
+| wants | single-syllable |
+| played | single-syllable |
+| points | single-syllable |
+| price | single-syllable |
+| rest | single-syllable |
+| space | single-syllable |
+| term | single-syllable |
+| land | single-syllable |
+| strong | single-syllable |
 | record | tier 1 (score 0) |
-| club | tier 1 (score 0) |
-| film | tier 1 (score 1) |
-| hold | tier 1 (score 1) |
-| player | tier 1 (score 0) |
+| club | single-syllable |
+| film | single-syllable |
+| hold | single-syllable |
+| player | single-syllable |
 | private | tier 1 (score 1) |
 | return | tier 1 (score 0) |
-| star | tier 1 (score 0) |
-| test | tier 1 (score 1) |
-| weeks | tier 1 (score 1) |
-| break | tier 1 (score 0) |
+| rights | single-syllable |
+| star | single-syllable |
+| test | single-syllable |
+| weeks | single-syllable |
+| break | single-syllable |
 | british | tier 1 (score 1) |
-| girls | tier 1 (score 1) |
-| gold | tier 1 (score 1) |
-| learn | tier 1 (score -1) |
-| bank | tier 1 (score 1) |
-| brought | tier 1 (score 0) |
-| east | tier 1 (score 1) |
-| park | tier 1 (score -1) |
-| press | tier 1 (score 0) |
-| sent | tier 1 (score 1) |
-| tried | tier 1 (score 0) |
-| worth | tier 1 (score 1) |
-| books | tier 1 (score 1) |
+| girls | single-syllable |
+| gold | single-syllable |
+| learn | single-syllable |
+| bank | single-syllable |
+| brought | single-syllable |
+| east | single-syllable |
+| hands | single-syllable |
+| park | single-syllable |
+| press | single-syllable |
+| sent | single-syllable |
+| tried | single-syllable |
+| worth | single-syllable |
+| books | single-syllable |
+| ground | single-syllable |
 | provide | tier 1 (score 1) |
-| sound | tier 1 (score 1) |
-| round | tier 1 (score 1) |
-| stuff | tier 1 (score 0) |
-| blue | tier 1 (score 0) |
-| drive | tier 1 (score 0) |
-| fast | tier 1 (score 1) |
-| felt | tier 1 (score 1) |
-| green | tier 1 (score 0) |
-| step | tier 1 (score 0) |
+| sound | single-syllable |
+| round | single-syllable |
+| stand | single-syllable |
+| stuff | single-syllable |
+| blue | single-syllable |
+| drive | single-syllable |
+| fast | single-syllable |
+| felt | single-syllable |
+| green | single-syllable |
+| step | single-syllable |
+| trust | single-syllable |
 | forward | tier 1 (score 0) |
-| trade | tier 1 (score 0) |
-| send | tier 1 (score 1) |
+| groups | single-syllable |
+| science | single-syllable |
+| trade | single-syllable |
+| send | single-syllable |
 | style | tier 1 (score 1) |
-| blood | tier 1 (score 0) |
-| lord | tier 1 (score -1) |
-| stage | tier 1 (score 0) |
-| terms | tier 1 (score 1) |
-| add | tier 1 (score -1) |
-| born | tier 1 (score -1) |
-| damn | tier 1 (score 1) |
-| staff | tier 1 (score 0) |
-| built | tier 1 (score 1) |
+| blood | single-syllable |
+| lord | single-syllable |
+| stage | single-syllable |
+| terms | single-syllable |
+| add | single-syllable |
+| born | single-syllable |
+| damn | single-syllable |
+| french | single-syllable |
+| staff | single-syllable |
+| built | single-syllable |
 | crazy | tier 1 (score 1) |
 | modern | tier 1 (score 0) |
-| parts | tier 1 (score 1) |
-| earth | tier 1 (score 1) |
+| parts | single-syllable |
+| earth | single-syllable |
 | created | tier 1 (score 1) |
-| mark | tier 1 (score -1) |
-| risk | tier 1 (score 1) |
-| sleep | tier 1 (score 0) |
-| build | tier 1 (score 1) |
-| card | tier 1 (score -1) |
-| dark | tier 1 (score -1) |
-| fans | tier 1 (score 1) |
+| mark | single-syllable |
+| risk | single-syllable |
+| schools | single-syllable |
+| sleep | single-syllable |
+| truth | single-syllable |
+| build | single-syllable |
+| card | single-syllable |
+| dark | single-syllable |
+| straight | single-syllable |
+| fans | single-syllable |
+| growth | single-syllable |
 | places | tier 1 (score 1) |
-| speak | tier 1 (score 0) |
-| cold | tier 1 (score 1) |
-| create | tier 1 (score 0) |
-| store | tier 1 (score 0) |
-| track | tier 1 (score 0) |
+| speak | single-syllable |
+| cold | single-syllable |
+| create | single-syllable |
+| spent | single-syllable |
+| store | single-syllable |
+| track | single-syllable |
+| brown | single-syllable |
+| plans | single-syllable |
 | pressure | tier 1 (score 1) |
 | station | tier 1 (score 1) |
 | credit | tier 1 (score 1) |
-| cross | tier 1 (score 0) |
-| kept | tier 1 (score 1) |
+| cross | single-syllable |
+| kept | single-syllable |
 | previous | tier 1 (score 1) |
-| sort | tier 1 (score -1) |
-| speed | tier 1 (score 0) |
+| sort | single-syllable |
+| speed | single-syllable |
 | travel | tier 1 (score 1) |
-| drop | tier 1 (score 0) |
-| link | tier 1 (score 1) |
-| beyond | tier 1 (score 1) |
-| jobs | tier 1 (score 1) |
+| drop | single-syllable |
+| link | single-syllable |
+| beyond | single-syllable |
+| jobs | single-syllable |
 | numbers | tier 1 (score 0) |
 | studies | tier 1 (score 1) |
-| clean | tier 1 (score 0) |
-| scene | tier 1 (score 1) |
-| train | tier 1 (score 1) |
-| claim | tier 1 (score 1) |
-| plus | tier 1 (score 1) |
-| pre | tier 1 (score 1) |
+| clean | single-syllable |
+| scene | single-syllable |
+| sold | single-syllable |
+| sounds | single-syllable |
+| spend | single-syllable |
+| teams | single-syllable |
+| costs | single-syllable |
+| train | single-syllable |
+| claim | single-syllable |
+| goals | single-syllable |
+| plus | single-syllable |
+| pre | single-syllable |
 | workers | tier 1 (score 1) |
-| brain | tier 1 (score 1) |
-| floor | tier 1 (score 1) |
-| hurt | tier 1 (score 0) |
-| pro | tier 1 (score 1) |
-| stock | tier 1 (score 1) |
+| brain | single-syllable |
+| floor | single-syllable |
+| hurt | single-syllable |
+| meant | single-syllable |
+| pro | single-syllable |
+| sports | single-syllable |
+| stock | single-syllable |
+| worst | single-syllable |
+| band | single-syllable |
 | effort | tier 1 (score 1) |
-| dream | tier 1 (score 1) |
-| skin | tier 1 (score 1) |
-| sweet | tier 1 (score 1) |
+| spring | single-syllable |
+| calls | single-syllable |
+| dream | single-syllable |
+| grand | single-syllable |
+| skin | single-syllable |
+| sweet | single-syllable |
 | thus | function word |
-| glad | tier 1 (score 1) |
-| grow | tier 1 (score 1) |
-| trip | tier 1 (score 1) |
-| cars | tier 1 (score 0) |
-| crime | tier 1 (score 1) |
-| spot | tier 1 (score 1) |
+| drink | single-syllable |
+| feels | single-syllable |
+| glad | single-syllable |
+| grow | single-syllable |
+| trip | single-syllable |
+| cars | single-syllable |
+| crime | single-syllable |
+| plant | single-syllable |
+| spot | single-syllable |
 | award | tier 1 (score 1) |
-| block | tier 1 (score 1) |
-| drug | tier 1 (score 1) |
-| trial | tier 1 (score 1) |
-| flight | tier 1 (score 1) |
-| stars | tier 1 (score 1) |
-| broke | tier 1 (score 1) |
-| glass | tier 1 (score 1) |
-| prior | tier 1 (score 1) |
-| slow | tier 1 (score 1) |
-| speech | tier 1 (score 1) |
-| tree | tier 1 (score 1) |
+| block | single-syllable |
+| lots | single-syllable |
+| coast | single-syllable |
+| drug | single-syllable |
+| trial | single-syllable |
+| claims | single-syllable |
+| flight | single-syllable |
+| stars | single-syllable |
+| broke | single-syllable |
+| glass | single-syllable |
+| prior | single-syllable |
+| screen | single-syllable |
+| slow | single-syllable |
+| speech | single-syllable |
+| tree | single-syllable |
 | airport | tier 1 (score 1) |
 | appears | tier 1 (score 1) |
-| plays | tier 1 (score 1) |
-| square | tier 1 (score 1) |
-| fresh | tier 1 (score 1) |
-| score | tier 1 (score 1) |
-| smart | tier 1 (score 1) |
-| click | tier 1 (score 1) |
-| draw | tier 1 (score 1) |
+| plays | single-syllable |
+| runs | single-syllable |
+| songs | single-syllable |
+| square | single-syllable |
+| wind | single-syllable |
+| brand | single-syllable |
+| cent | single-syllable |
+| count | single-syllable |
+| fourth | single-syllable |
+| fresh | single-syllable |
+| mouth | single-syllable |
+| score | single-syllable |
+| smart | single-syllable |
+| starts | single-syllable |
+| throw | single-syllable |
+| arms | single-syllable |
+| click | single-syllable |
+| faith | single-syllable |
+| fund | single-syllable |
+| draw | single-syllable |
 | leaders | tier 1 (score 1) |
-| prime | tier 1 (score 1) |
-| weird | tier 1 (score 0) |
-| grade | tier 1 (score 1) |
-| stone | tier 1 (score 1) |
+| prime | single-syllable |
+| spread | single-syllable |
+| weird | single-syllable |
+| grade | single-syllable |
+| stone | single-syllable |
+| strength | single-syllable |
 | users | tier 1 (score 1) |
+| wild | single-syllable |
+| camp | single-syllable |
+| cast | single-syllable |
+
+## Content gaps flagged
+
+- **3-consonant clusters**: only 16 qualifying words (< 20)
 
 ## Sentence ladder inventory (§6) — instances of the target sound per sentence
 
