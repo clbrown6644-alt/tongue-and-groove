@@ -8,7 +8,7 @@ If a prompt in this session looks like it's about the options site (covered call
 
 **HOLD ON — I NOTICED YOU MIGHT BE IN THE WRONG WINDOW.**
 
-Then say what the prompt looks like it's about and ask CB to confirm. Do not touch any file until CB answers. (A `UserPromptSubmit` hook in `.claude/settings.local.json` auto-flags these prompts by keyword; this rule is the backstop for anything the keyword list misses.)
+Then say what the prompt looks like it's about and ask CB to confirm. Do not touch any file until CB answers. (A global `UserPromptSubmit` hook — `~/.claude/wrong-window-guard.sh`, wired in `~/.claude/settings.json` — auto-flags cross-project prompts by keyword in every project; this rule is the backstop for anything the keyword list misses.)
 
 If CB confirms it IS options work: do it entirely inside `~/Projects/options-site` and log it in the vault's `Business Projects/Options Website/Docs/` — never in Tongue and Groove docs. The reverse rule lives in the options-site repo's `CLAUDE.md`.
 
