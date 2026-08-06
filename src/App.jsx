@@ -50,6 +50,8 @@ const buildPlan = (variantId) => {
 // category-loaded drill sentences — mixed, never chosen by the user. A
 // scenario session filters to its own bank instead.
 const ALL_COUPLE_SENTS = [...Object.values(SCENARIO_SENTENCES).flat(), ...Object.values(SENTENCES).flat()];
+// Doctor + Restaurant get extra weight in the Practice couples mix (CB 2026-08-06)
+const DR_REST = new Set([...(SCENARIO_SENTENCES.dr || []), ...(SCENARIO_SENTENCES.rest || [])]);
 
 // §6 ladder rung of a sentence: 1 / 2 / 3 = instances of its target sound
 // (from the build-time tags); 0 = no target sound, unusable as a couple.
@@ -160,8 +162,6 @@ export default function App() {
   useEffect(() => { statsRef.current = wordStats; }, [wordStats]);
   const timerRef = useRef(null);
   const itemRef = useRef(null);
-  const [paceIdx, setPaceIdx] = useState(0); // read-along position within a paced sentence
-  const paceRef = useRef(0);
   const doneRef = useRef(0);
   const wakeRef = useRef(null);
   const marksAppliedRef = useRef(true); // false only while a fresh summary awaits its hard-word taps
@@ -338,8 +338,6 @@ export default function App() {
   };
 
   const next = () => {
-    paceRef.current = 0; // every new item starts its read-along at word one
-    setPaceIdx(0);
     if (mode === "pairs") {
       if (doneRef.current >= setSize) return;
       const c = pickCat({ ...ratings, x: 3 }, Object.keys(PAIRS));
@@ -409,7 +407,13 @@ export default function App() {
       for (const r of order) { cand = bank.filter((x) => rungOf(x) === r); if (cand.length) break; }
       if (!cand.length) cand = bank;
       const list = notRecent(cand);
-      const sent = list[Math.floor(Math.random() * list.length)];
+      // Doctor and Restaurant sentences carry 3× weight in the Practice mix
+      // (CB 2026-08-06) — they're the event-prep priorities.
+      let tw = 0;
+      const ws = list.map((x) => { const wt = DR_REST.has(x) ? 3 : 1; tw += wt; return wt; });
+      let r = Math.random() * tw;
+      let sent = list[list.length - 1];
+      for (let i = 0; i < list.length; i++) { r -= ws[i]; if (r <= 0) { sent = list[i]; break; } }
       const w = SENT_META[sent]?.w || topTarget(sent);
       nx = { kind: "couple", sentence: sent, targets: targetsOf(sent), w, beat: 1, hint: !s.hinted };
       recordSeen(w);
@@ -460,20 +464,15 @@ export default function App() {
       let alive = true;
       const step = () => {
         if (!alive) return;
-        // §7: one shared WPM, applied word by word. A sentence doesn't hold as
-        // a static block — a read-along highlight walks through it at the WPM
-        // rate (one tick per word), then the next item arrives. Total sentence
-        // time is still (words ÷ WPM) × 60s, but the pace is visible.
-        const cur = itemRef.current;
-        const isSent = cur && (cur.kind === "bonus" || (cur.kind === "couple" && cur.beat === 2));
-        if (isSent && paceRef.current < cur.sentence.split(/\s+/).length - 1) {
-          paceRef.current += 1;
-          setPaceIdx(paceRef.current);
-        } else {
-          next();
-        }
+        // §7: one shared WPM; a sentence holds as a static block for its word
+        // count ÷ 1.7 (CB 2026-08-06: no read-along walking the words, and
+        // connected speech reads ~70% faster than isolated word drilling).
+        next();
         if (tickOn) playTick();
-        timerRef.current = setTimeout(step, (60 / wpm) * 1000);
+        const cur = itemRef.current;
+        const base = (60 / wpm) * 1000;
+        const isSent = cur && (cur.kind === "bonus" || (cur.kind === "couple" && cur.beat === 2));
+        timerRef.current = setTimeout(step, isSent ? (cur.sentence.split(/\s+/).length * base) / 1.7 : base);
       };
       step();
       return () => { alive = false; clearTimeout(timerRef.current); };
@@ -611,7 +610,6 @@ export default function App() {
     .sentWrap { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 18px; max-width: 900px; }
     .sw { font-weight: 400; font-size: calc(clamp(35px, 10.4vw, 61px) * ${fontScale}); line-height: 1.1; color: ${T.blue}; padding: 0 4px; border-radius: 12px; }
     .sw.tgt { font-weight: 700; background: ${T.chip}; }
-    .sw.cur { box-shadow: inset 0 -6px 0 ${T.amber}; }
     .coupleHint { margin-top: 18px; font-size: ${S(24)}; color: ${T.ink}; text-align: center; line-height: 1.35; }
     .idle { color: ${T.mut}; font-size: ${S(17)}; text-align: center; max-width: 340px; line-height: 1.5; }
     .controls { padding: 0 16px 26px; }
@@ -1264,7 +1262,7 @@ export default function App() {
               const toks = item.sentence.split(" ");
               const hi = item.w ? toks.findIndex((t) => cleanToken(t) === item.w) : -1;
               return toks.map((t, i) => (
-                <span key={i} className={"sw" + (i === hi ? " tgt" : "") + (paced && i === paceIdx ? " cur" : "")}>{t}</span>
+                <span key={i} className={"sw" + (i === hi ? " tgt" : "")}>{t}</span>
               ));
             })()}
           </div>
