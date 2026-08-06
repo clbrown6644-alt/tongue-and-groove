@@ -5,8 +5,10 @@ import { loadState, saveState, dkey } from "./storage.js";
 
 const saved = loadState();
 
-// End-of-session difficulty check-in — asked after the first session, then at
-// most once every DIFF_ASK_GAP banked sets (a nudge, never a nag).
+// Difficulty check-in — asked right after the first warm-up words (CB
+// 2026-08-05), then at most once every DIFF_ASK_GAP banked sets (a nudge,
+// never a nag). Easy/Too hard answers shift the warm-up tier mix up or down.
+// Pairs mode has no warm-up break, so its check-in stays on the summary.
 const DIFF_ASK_GAP = 6;
 const DIFF_LEVELS = [
   { id: "easy", label: "Easy" },
@@ -15,10 +17,10 @@ const DIFF_LEVELS = [
   { id: "toohard", label: "Too hard" },
 ];
 const DIFF_ACK = {
-  easy: "Good to know — the drills will keep the challenge coming.",
+  easy: "Good to know — we'll mix in harder words from here.",
   medium: "Right in the zone. That's where progress lives.",
-  hard: "Hard is where the gains are. Mark the toughest words above and they'll come back until you beat them.",
-  toohard: "Thanks for the honesty. A slower pace or a shorter session is the right move — no medals for grinding.",
+  hard: "Hard is where the gains are. Mark the toughest words at the end and they'll come back until you beat them.",
+  toohard: "Thanks for the honesty. We'll ease the mix — and a shorter session is always a fine move.",
 };
 
 const isIOS = typeof navigator !== "undefined" && /iP(hone|ad|od)/.test(navigator.userAgent);
@@ -63,8 +65,17 @@ const SCEN_READY = Object.fromEntries(SCENARIOS.map((sc) => {
 
 // §1E warm-up tier spread — 20 / 30 / 30 / 20 across difficulty tiers 2-5,
 // so every session mixes words the user can win and words that stretch.
-const tierCounts = (total) => {
-  const c = { 2: Math.round(total * 0.2), 3: Math.round(total * 0.3), 4: Math.round(total * 0.3) };
+// The check-in answers slide the spread up or down (adj -2 … +2).
+const TIER_MIX = {
+  "-2": [0.5, 0.3, 0.15, 0.05],
+  "-1": [0.35, 0.35, 0.2, 0.1],
+  "0":  [0.2, 0.3, 0.3, 0.2],
+  "1":  [0.1, 0.2, 0.35, 0.35],
+  "2":  [0.05, 0.15, 0.3, 0.5],
+};
+const tierCounts = (total, adj = 0) => {
+  const mix = TIER_MIX[String(Math.max(-2, Math.min(2, Math.round(adj))))];
+  const c = { 2: Math.round(total * mix[0]), 3: Math.round(total * mix[1]), 4: Math.round(total * mix[2]) };
   c[5] = total - c[2] - c[3] - c[4];
   return c;
 };
@@ -143,11 +154,14 @@ export default function App() {
   const [wordStats, setWordStats] = useState(saved?.wordStats ?? {}); // { word: { s: seen count, h: hard level } }
   const [diffChecks, setDiffChecks] = useState(saved?.diffChecks ?? []); // difficulty check-ins: [{ d, v, sets }]
   const [lastDiffAsk, setLastDiffAsk] = useState(saved?.lastDiffAsk ?? 0); // totalSetsAll when last asked
-  const [diffAnswered, setDiffAnswered] = useState(null); // this summary's answer (not persisted)
+  const [diffAnswered, setDiffAnswered] = useState(null); // this session's answer (not persisted)
+  const [diffAdj, setDiffAdj] = useState(saved?.diffAdj ?? 0); // warm-up tier-mix shift, -2 … +2
   const statsRef = useRef(wordStats);
   useEffect(() => { statsRef.current = wordStats; }, [wordStats]);
   const timerRef = useRef(null);
   const itemRef = useRef(null);
+  const [paceIdx, setPaceIdx] = useState(0); // read-along position within a paced sentence
+  const paceRef = useRef(0);
   const doneRef = useRef(0);
   const wakeRef = useRef(null);
   const marksAppliedRef = useRef(true); // false only while a fresh summary awaits its hard-word taps
@@ -220,8 +234,19 @@ export default function App() {
 
   // persist everything that should survive a close (A8 / M-persist)
   useEffect(() => {
-    saveState({ ratings, paced, wpm, tickOn, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, scenario, lastRescoreSets, condition, variant, useRec, manualRatings, diffChecks, lastDiffAsk, recent: recentRef.current });
-  }, [ratings, paced, wpm, tickOn, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, scenario, lastRescoreSets, condition, variant, useRec, manualRatings, diffChecks, lastDiffAsk]);
+    saveState({ ratings, paced, wpm, tickOn, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, scenario, lastRescoreSets, condition, variant, useRec, manualRatings, diffChecks, lastDiffAsk, diffAdj, recent: recentRef.current });
+  }, [ratings, paced, wpm, tickOn, setSize, dark, fontScale, feedbackOn, totalWords, hist, iosHintDismissed, wordStats, scenario, lastRescoreSets, condition, variant, useRec, manualRatings, diffChecks, lastDiffAsk, diffAdj]);
+
+  // §8 bugfix: whenever "Use recommended" is on, the ratings ARE the current
+  // condition's preset — enforced here (not just at screen transitions) so the
+  // assess screen always shows the preset values. A test user with the toggle
+  // on saw stale default 3s because presets only applied on one path.
+  useEffect(() => {
+    if (useRec) {
+      const p = PRESETS[condition || "other"];
+      setRatings({ th: p.th, tri: p.tri, lb: p.lb, rb: p.rb, sb: p.sb, fc: p.fc });
+    }
+  }, [useRec, condition]);
 
   const bump = (inc, isPair) => {
     setTotalWords((t) => t + inc);
@@ -242,7 +267,7 @@ export default function App() {
   // keep their HARD_BOOST inside each slot; the queue shuffles so every
   // warm-up set mixes easy wins with genuine challenge.
   const buildWarmupQueue = (total) => {
-    const counts = tierCounts(total);
+    const counts = tierCounts(total, diffAdj);
     const stats = statsRef.current;
     const used = new Set();
     const pickFrom = (tier) => {
@@ -313,6 +338,8 @@ export default function App() {
   };
 
   const next = () => {
+    paceRef.current = 0; // every new item starts its read-along at word one
+    setPaceIdx(0);
     if (mode === "pairs") {
       if (doneRef.current >= setSize) return;
       const c = pickCat({ ...ratings, x: 3 }, Object.keys(PAIRS));
@@ -433,14 +460,20 @@ export default function App() {
       let alive = true;
       const step = () => {
         if (!alive) return;
-        next();
-        if (tickOn) playTick();
-        // §7: one shared WPM. A sentence holds for its actual word count —
-        // (words ÷ WPM) × 60s — so a five-word sentence gets five words' time.
+        // §7: one shared WPM, applied word by word. A sentence doesn't hold as
+        // a static block — a read-along highlight walks through it at the WPM
+        // rate (one tick per word), then the next item arrives. Total sentence
+        // time is still (words ÷ WPM) × 60s, but the pace is visible.
         const cur = itemRef.current;
-        const base = (60 / wpm) * 1000;
         const isSent = cur && (cur.kind === "bonus" || (cur.kind === "couple" && cur.beat === 2));
-        timerRef.current = setTimeout(step, isSent ? cur.sentence.split(/\s+/).length * base : base);
+        if (isSent && paceRef.current < cur.sentence.split(/\s+/).length - 1) {
+          paceRef.current += 1;
+          setPaceIdx(paceRef.current);
+        } else {
+          next();
+        }
+        if (tickOn) playTick();
+        timerRef.current = setTimeout(step, (60 / wpm) * 1000);
       };
       step();
       return () => { alive = false; clearTimeout(timerRef.current); };
@@ -539,6 +572,9 @@ export default function App() {
     setDiffChecks((c) => [...c, { d: dkey(new Date()), v, sets: totalSetsAll }]);
     setLastDiffAsk(totalSetsAll);
     setDiffAnswered(v);
+    // the answer moves the dial: Easy → harder warm-up mix, Too hard → easier
+    if (v === "easy") setDiffAdj((a) => Math.min(2, a + 1));
+    if (v === "toohard") setDiffAdj((a) => Math.max(-2, a - 1));
   };
   const togglePaced = () => { setPlaying(false); setPaced((p) => !p); };
 
@@ -573,8 +609,9 @@ export default function App() {
     .pairWrap { display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px 20px; align-items: baseline; justify-content: center; }
     .pair2 { font-weight: 700; font-size: calc(clamp(44px, 13vw, 76px) * ${fontScale}); letter-spacing: -0.01em; text-align: center; line-height: 1.05; color: ${T.blue}; }
     .sentWrap { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 18px; max-width: 900px; }
-    .sw { font-weight: 400; font-size: calc(clamp(44px, 13vw, 76px) * ${fontScale}); line-height: 1.1; color: ${T.blue}; padding: 0 4px; border-radius: 12px; }
+    .sw { font-weight: 400; font-size: calc(clamp(35px, 10.4vw, 61px) * ${fontScale}); line-height: 1.1; color: ${T.blue}; padding: 0 4px; border-radius: 12px; }
     .sw.tgt { font-weight: 700; background: ${T.chip}; }
+    .sw.cur { box-shadow: inset 0 -6px 0 ${T.amber}; }
     .coupleHint { margin-top: 18px; font-size: ${S(24)}; color: ${T.ink}; text-align: center; line-height: 1.35; }
     .idle { color: ${T.mut}; font-size: ${S(17)}; text-align: center; max-width: 340px; line-height: 1.5; }
     .controls { padding: 0 16px 26px; }
@@ -714,7 +751,7 @@ export default function App() {
         </div>
         <div className="card">
           <h2>Practice speaking. Out loud. Every day.</h2>
-          <p className="sub" style={{ marginBottom: 0 }}>A daily speech workout for people rebuilding clear speech — after a stroke, with Parkinson's, or with apraxia. Free, private to your device, no account needed.</p>
+          <p className="sub" style={{ marginBottom: 0 }}>A daily speech workout for people rebuilding clear speech — after a stroke or brain injury, or with Parkinson's. Private to your device, no account needed.</p>
         </div>
         <div className="card">
           <h2>Why it works</h2>
@@ -724,7 +761,7 @@ export default function App() {
           <p className="sub"><b>Momentum you can see.</b> Daily rings, streaks, and milestone awards make every session count.</p>
           <p className="sub" style={{ marginBottom: 0 }}><i>A practice tool, not medical treatment — keep working with your care team.</i></p>
         </div>
-        <button className="cta" onClick={() => setScreen("assess")}>START</button>
+        <button className="cta" onClick={() => setScreen("condition")}>START</button>
         {returning && (
           <button className="ghost" style={{ display: "block", width: "calc(100% - 32px)", margin: "0 16px 20px" }}
             onClick={() => setScreen("progress")}>Back to my practice</button>
@@ -746,11 +783,7 @@ export default function App() {
             <button key={c.id} className="condBtn" onClick={() => {
               setCondition(c.id);
               setVariant(COND_VARIANT[c.id]);
-              if (useRec) {
-                const p = PRESETS[c.id];
-                setRatings({ th: p.th, tri: p.tri, lb: p.lb, rb: p.rb, sb: p.sb, fc: p.fc });
-              }
-              setScreen("drill");
+              setScreen("assess"); // preset ratings apply via the useRec sync effect
             }}>{c.name}</button>
           ))}
         </div>
@@ -807,11 +840,8 @@ export default function App() {
             <button className="switch" onClick={() => {
               const on = !useRec;
               setUseRec(on);
-              if (on) {
-                setManualRatings(ratings); // §8: manual choices survive the flip back
-                const p = PRESETS[condition || "other"];
-                setRatings({ th: p.th, tri: p.tri, lb: p.lb, rb: p.rb, sb: p.sb, fc: p.fc });
-              } else if (manualRatings) setRatings(manualRatings);
+              if (on) setManualRatings(ratings); // §8: manual choices survive the flip back; the sync effect applies the preset
+              else if (manualRatings) setRatings(manualRatings);
             }} aria-pressed={useRec}>
               <span className={"track" + (useRec ? " on" : "")}><span className="knob" /></span>
             </button>
@@ -859,8 +889,8 @@ export default function App() {
         </div>
         {feedbackOn && (
           <div className="card">
-            <h2>Any hard ones?</h2>
-            <p className="sub">Tap the words that felt hard to say.{hardCount > 0 ? ` ${hardCount} marked.` : ""}</p>
+            <h2>{mode === "pairs" ? "Which word pairs were hard?" : "Any hard ones?"}</h2>
+            <p className="sub">{mode === "pairs" ? "Tap the pairs that felt hard to say." : "Tap the words that felt hard to say."}{hardCount > 0 ? ` ${hardCount} marked.` : ""}</p>
             <div className="wordGrid">
               {setItems.map((w, i) => (
                 <button key={i} className={"wchip" + (difficult[i] ? " hard" : "")}
@@ -869,7 +899,7 @@ export default function App() {
             </div>
           </div>
         )}
-        {(diffAnswered || diffChecks.length === 0 || totalSetsAll - lastDiffAsk >= DIFF_ASK_GAP) && (
+        {mode === "pairs" && (diffAnswered || diffChecks.length === 0 || totalSetsAll - lastDiffAsk >= DIFF_ASK_GAP) && (
           <div className="card">
             <h2>How hard was that?</h2>
             {diffAnswered ? (
@@ -1138,7 +1168,7 @@ export default function App() {
       <style>{css}</style>
       <Header right={<><button className="hdrBtn" onClick={() => { setPlaying(false); setScreen("progress"); }}>Progress</button><button className="hdrBtn" onClick={() => { setPlaying(false); setScreen("settings"); }}>Settings</button></>} />
       <div className="tabs">
-        <button className={"tab" + (mode === "practice" ? " on" : "")} onClick={() => switchMode("practice")}>Practice</button>
+        <button className={"tab" + (mode === "practice" ? " on" : "")} onClick={() => switchMode("practice")}>Word Work</button>
         <button className={"tab" + (mode === "pairs" ? " on" : "")} onClick={() => switchMode("pairs")}>Sound pairs</button>
         <button className={"tab" + (mode === "scen" ? " on" : "")}
           onClick={() => {
@@ -1191,7 +1221,30 @@ export default function App() {
           <div style={{ textAlign: "center", width: "100%", maxWidth: 420 }}>
             <div className="awardWrap"><Badge size={72} color={T.blue} ring={T.amber} star="#fff" /></div>
             <h2 style={{ margin: "12px 0 4px" }}>{stageInfo(sess).name} done!</h2>
-            <p className="idle" style={{ margin: "0 auto 18px" }}>Take a short breather — 20 or 30 seconds is perfect.</p>
+            {/* Difficulty check-in lives on the first warm-up break (CB
+                2026-08-05: ask right after the first words), gated to the
+                first-ever session then every DIFF_ASK_GAP sets. */}
+            {sess.idx === 0 && sess.plan[0].stage === "warmup" && (diffAnswered || diffChecks.length === 0 || totalSetsAll - lastDiffAsk >= DIFF_ASK_GAP) ? (
+              <div style={{ margin: "0 0 14px" }}>
+                <p className="idle" style={{ margin: "0 auto 10px" }}>How hard was that?</p>
+                {diffAnswered ? (
+                  <>
+                    <p className="idle" style={{ margin: "0 auto 10px" }}>{DIFF_ACK[diffAnswered]}</p>
+                    {diffAnswered === "toohard" && paced && (
+                      <button className="condBtn" style={{ margin: "0 0 4px" }}
+                        onClick={() => setWpm((w) => Math.max(10, w - 5))}>Slow the pace to {Math.max(10, wpm - 5)} WPM</button>
+                    )}
+                  </>
+                ) : (
+                  DIFF_LEVELS.map((l) => (
+                    <button key={l.id} className="condBtn" style={{ margin: "3px 0", textAlign: "center" }}
+                      onClick={() => answerDiff(l.id)}>{l.label}</button>
+                  ))
+                )}
+              </div>
+            ) : (
+              <p className="idle" style={{ margin: "0 auto 18px" }}>Take a short breather — 20 or 30 seconds is perfect.</p>
+            )}
             <button className="cta" style={{ width: "100%", margin: "0 0 10px" }} onClick={() => resumeEntry(false)}>Continue</button>
             <button className="ghost" style={{ display: "block", width: "100%" }} onClick={() => resumeEntry(true)}>Redo that set</button>
           </div>
@@ -1210,7 +1263,9 @@ export default function App() {
               // session word a bonus sentence carries), first occurrence only.
               const toks = item.sentence.split(" ");
               const hi = item.w ? toks.findIndex((t) => cleanToken(t) === item.w) : -1;
-              return toks.map((t, i) => <span key={i} className={"sw" + (i === hi ? " tgt" : "")}>{t}</span>);
+              return toks.map((t, i) => (
+                <span key={i} className={"sw" + (i === hi ? " tgt" : "") + (paced && i === paceIdx ? " cur" : "")}>{t}</span>
+              ));
             })()}
           </div>
         )}

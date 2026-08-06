@@ -31,7 +31,8 @@ import json
 import re
 from wordfreq import top_n_list
 
-TOP_N = 1500
+TOP_N = 1500       # 1,500 confirmed (CB 2026-08-05) — a 1,000 cut opens content
+                   # gaps: TH drops 20→10, S-blends 23→13
 DEEP_N = 3000      # ranks 1,500-3,000: admitted ONLY if they score tier 4-5
                    # (the top-1,500 universe is short-word-heavy — without this
                    # the tier-5 pool is 2 words and the 6/9/9/6 warm-up spread
